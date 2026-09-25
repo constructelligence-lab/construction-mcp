@@ -1,0 +1,8 @@
+material,bank_to_loose_low_percent,bank_to_loose_high_percent,compacted_shrink_low_percent,compacted_shrink_high_percent,notes
+Common earth,15,25,5,15,"Swell depends on moisture and handling method"
+Sand and gravel,10,15,5,10,"Granular soils swell less than cohesive soils"
+Clay,20,30,10,20,"Swell rises as moisture content increases"
+Silty clay,15,25,8,18,"Intermediate between clay and common earth"
+Rock blasted,40,60,0,0,"Rock does not shrink; it bulks permanently when broken"
+Topsoil stripped,10,25,0,0,"Stockpile volume includes a moisture and handling allowance"
+Crushed stone base,0,0,15,25,"Placed under compaction; use placed tons for payment"

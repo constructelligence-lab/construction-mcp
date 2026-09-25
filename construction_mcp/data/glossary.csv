@@ -1,0 +1,88 @@
+term,category,definition,used_in
+360 capture,Field,"A dated panoramic photographic record of site conditions, useful for progress evidence and for resolving disputes about existing conditions.",Field and progress
+4D,Technology,"A construction model or schedule linked to time, so the sequence can be viewed and checked before it is built.",Planning
+AHJ (Authority Having Jurisdiction),Permits,"The body that reviews plans, issues permits and performs inspections, whether municipal, county or state.",Permits and inspections
+Allowance,Contracts,"A stated sum in the contract for work that cannot be priced precisely yet. Unspent allowance is usually returned to the owner, unlike a contingency.",Estimating and contracts
+ASI (Architect's Supplemental Instruction),Contracts,"A written instruction clarifying or interpreting the documents. If it changes cost or time, it should be issued as a change order rather than an ASI.",Contract administration
+Backcharge,Commercial,Cost a contractor deducts from a subcontractor for work the contractor had to complete or repair. It needs notice requirements met to be defensible.,Subcontract management
+Beneficial occupancy,Contracts,"The owner's use or occupancy of part of the work before substantial completion, which often shifts insurance, security and damage responsibility.",Contract administration
+Bid bond,Commercial,"A surety guarantee that a bidder will enter the contract if awarded, usually a percentage of the bid amount.",Bidding
+Bid leveling,Estimating,"Normalising competing bids into a like-for-like comparison by adding missing scope, adjusting for exclusions and correcting qualifications.",Bidding
+BIM (Building Information Model),Technology,A coordinated digital model of the building. Its value on site depends on whether somebody maintains it as the design changes.,Design and coordination
+Burden (labour burden),Cost control,"The cost of employing labour beyond the base wage, including payroll taxes, insurance, benefits and paid time off. Loaded rates are used for forecasting, not base wages.",Estimating and job cost
+Certified payroll,Compliance,"Weekly payroll reporting required on prevailing-wage projects, submitted under penalty of perjury.",Compliance
+Change directive,Contracts,"A written instruction to proceed with a change before price and time are agreed. The work is certain, the commercial outcome is not.",Contract administration
+Change order,Contracts,"An executed amendment to the contract adjusting scope, price, time or both. Until it is executed, the work is unprotected.",Contract administration and cost control
+Clash detection,Technology,"Automated checking of the model for elements occupying the same space, such as a duct routing through a beam.",Design and coordination
+Competent person,Safety,A person capable of identifying hazards in the workplace and authorised to take prompt corrective action. The term carries specific meaning in safety regulation.,Safety
+Composite rate,Estimating,"A blended hourly rate for a crew of different trades or classifications, used where individual rates would be impractical.",Estimating
+Concurrent delay,Contracts,"Two or more delaying events overlapping in time, at least one of which is the owner's responsibility. It complicates entitlement to time and money.",Claims and contract administration
+Constructability review,Preconstruction,"A review of the documents for buildability before construction starts, ideally with the people who will build the work.",Preconstruction
+Contingency,Estimating,"An amount reserved for known unknowns. It is not an allowance, and it is not a substitute for fixing a bad estimate.",Estimating and cost control
+Cost code,Cost control,"The accounting label that ties a cost to a specific item of work, so actuals can be compared with the estimate. Forecasts inherit the quality of this coding.",Job cost
+Cost-loaded schedule,Schedule,"A schedule with the value or cost of each activity attached, used to generate billing and cash-flow curves.",Schedule and finance
+CPI (Cost Performance Index),Cost control,Earned value divided by actual cost. Above one means the work cost less than planned.,Cost control and forecasting
+Crew day rate,Estimating,"The cost of a crew for one day, including labour, equipment and burden. Common in pipeline, earthwork and highway estimating.",Estimating
+Critical path,Schedule,"The sequence of activities whose delay delays the project finish, normally the longest path through the network with no total float.",Schedule
+CSI MasterFormat,Classification,"The North American numbering system for organising construction work into divisions and sections, licensed from CSI. This repository maps to division titles only.",Estimating and specifications
+Davis-Bacon Act,Compliance,US federal law requiring prevailing wages on federally funded construction contracts above a threshold.,Compliance
+DBE / MBE / WBE,Compliance,"Disadvantaged, minority and women business enterprise classifications, used for participation goals on many publicly funded projects.",Compliance and bidding
+Deferred submittal,Schedule,"A portion of the work designed or detailed by a subcontractor and submitted after the main submittal cycle, such as a curtain wall or an elevator.",Procurement
+Design-build,Delivery,A delivery method where one entity is responsible for both design and construction under a single contract.,Contracts and delivery
+DSO (Days Sales Outstanding),Finance,"Average days between billing and collection, calculated as receivables divided by daily revenue. A measure of how long your cash is out.",Finance
+EAC (Estimate At Completion),Cost control,"The forecast total cost of the work at completion, built from actuals, commitments and the remaining cost to complete.",Cost control and forecasting
+Earned value (EV),Cost control,"The budgeted value of work actually performed to date, as distinct from the cost of performing it.",Cost control
+EMR (Experience Modification Rate),Safety,An insurance rating factor comparing a company's loss history with its industry. Frequently used in prequalification and sometimes in bid scoring.,Safety and prequalification
+ETC (Estimate To Complete),Cost control,"The remaining cost to finish the work, equal to the estimate at completion less actual cost to date.",Cost control
+Float,Schedule,Total float is how long an activity can slip without delaying completion; free float is how long it can slip without delaying the next activity.,Schedule and claims
+Force majeure,Contracts,"A contractual clause excusing performance for events beyond either party's control, such as natural disasters, with notice obligations attached.",Contracts
+Front-loading,Commercial,Weighting a schedule of values so early payments exceed the work actually in place. It helps cash flow and damages credibility if challenged.,Commercial management
+G702,Documents,"The AIA Application and Certificate for Payment, which summarises the contract sum, retainage and the amount due.",Billing
+G703,Documents,The AIA Continuation Sheet that lists the schedule of values with work completed and stored materials per line.,Billing
+General conditions,Contracts,"The contract terms covering rights, obligations, payment and dispute resolution, as distinct from the scope of work.",Contracts
+GMP (Guaranteed Maximum Price),Delivery,"A contract form capping the price, often with a shared savings arrangement and a contingency controlled jointly.",Contracts and delivery
+Hard costs,Estimating,"Costs of physical construction: labour, material, equipment and subcontracts.",Estimating and finance
+JHA (Job Hazard Analysis),Safety,"A written breakdown of a task into steps with the hazards and controls for each. Task-specific, not a generic template.",Safety
+Leading indicator,Safety,"A measure of prevention activity, such as inspections completed or near misses reported, as opposed to an outcome such as a recordable injury.",Safety
+Letter of intent,Contracts,"A document expressing intent to contract. Whether it creates obligations depends on its wording, so it should be reviewed before work begins on its basis.",Contracts
+Lien waiver,Commercial,"A document releasing mechanics lien rights, in conditional or unconditional and progress or final form. Unconditional waivers should not be signed before payment clears.",Commercial management
+Liquidated damages,Contracts,"A pre-agreed sum per day for late completion, enforceable where it is a genuine pre-estimate of loss.",Contracts and schedule
+LOD (Level of Development),Technology,"A scale describing how much detail and reliability a model element carries at a given stage, such as LOD 350 for fabrication-level coordination.",Design and coordination
+Long-lead item,Procurement,"Equipment or material with a procurement duration that can drive the schedule, such as switchgear, elevators or curtain wall.",Procurement and schedule
+Look-ahead schedule,Schedule,"A short-interval plan, commonly three to six weeks, of what will actually be built next, used to remove constraints before they bite.",Field planning
+Mobilization,Contracts,"The preparatory phase of bringing labour, equipment and facilities to site, often billed as a separate schedule-of-values line.",Contracts and billing
+No-damage-for-delay clause,Contracts,A contract clause barring delay damages. Enforcement varies by jurisdiction and there are recognised exceptions.,Contracts and claims
+Notice to proceed,Contracts,"Written instruction from the owner to begin the work, which usually starts the contract time.",Contracts and schedule
+O&P (Overhead and Profit),Estimating,The contractor's indirect cost and fee added to a change or a cost-plus arrangement.,Estimating and change orders
+Overbilling,Finance,"Billing more than the value of work performed. Cash-positive now, and a liability in the work in progress report.",Finance
+Pay application,Finance,"The periodic submission requesting payment, usually on a G702 and G703 or an equivalent owner form.",Billing
+Pay-if-paid,Contracts,A clause making payment by the owner a condition precedent to payment down the chain. Enforceability varies by jurisdiction.,Subcontracts
+Pay-when-paid,Contracts,"A clause setting the timing of payment down the chain once the owner pays, as distinct from making payment conditional.",Subcontracts
+PCO (Potential Change Order),Contracts,A priced change that has not yet been executed. Tracked separately so unapproved change exposure is visible rather than absorbed.,Cost control
+Percentage-of-completion,Finance,"A revenue recognition method recognising income in proportion to costs or progress, with a WIP schedule reconciling billed and earned amounts.",Finance
+Performance bond,Commercial,"A surety guarantee of performance, usually for the full contract value, called in when the contractor fails to perform.",Contracts
+Point cloud,Technology,"A dense set of measured points captured by laser scanning, used for as-built verification and dimensioning existing conditions.",Survey and verification
+Production rate,Estimating,"Units of work installed per unit of time by a defined crew, the basis for durations and labour cost. Your own history beats published tables.",Estimating
+Punch list,Quality,"The list of incomplete, defective or missing work identified at substantial completion and closed out before final payment.",Closeout
+Quantity takeoff,Estimating,"Measuring quantities of work from the drawings and specifications, item by item, before pricing.",Estimating
+Retainage,Finance,"A percentage withheld from each progress payment, released at milestones such as substantial completion and final completion.",Finance and contracts
+RFI (Request for Information),Documents,"A formal question about the documents. Late answers are a common cause of delay, so RFI ageing is worth tracking.",Contract administration
+Schedule of values,Finance,"The itemised breakdown of the contract sum used as the basis for progress billing, ideally aligned with the cost estimate.",Billing
+Shop drawing,Documents,"A contractor or subcontractor drawing showing fabrication or installation detail, reviewed by the design team for conformance.",Procurement
+Soft costs,Finance,"Non-construction costs such as design fees, permits, legal and financing.",Finance
+Special inspection,Quality,"Independent inspection of specified work such as welds, structural masonry or firestopping, required by code on many projects.",Quality and compliance
+Subcontractor default insurance,Commercial,"Insurance that covers the cost of a subcontractor default, used as an alternative to requiring performance bonds from every trade.",Commercial management
+Submittal,Documents,"Product data, samples or drawings submitted for review before installation, with a review cycle that belongs in the schedule.",Procurement
+Substantial completion,Contracts,"The stage at which the work is sufficiently complete for the owner to use it for its intended purpose. It normally triggers warranties, retainage release and handover.",Contracts and closeout
+T&M (Time and Materials),Contracts,"Payment based on actual labour hours and material cost plus an agreed markup, used where scope cannot be defined in advance.",Contracts and change orders
+TCO (Temporary Certificate of Occupancy),Permits,Permission to occupy all or part of a building before all conditions of the final certificate are satisfied.,Closeout
+Three week lookahead,Schedule,A rolling short-interval plan that the field team owns. The single most useful schedule artefact on most jobs.,Field planning
+Toolbox talk,Safety,"A short, task-relevant safety briefing delivered before work. Task-specific talks land better than generic ones.",Safety
+Total float,Schedule,The amount of time an activity can be delayed without delaying project completion. Consumed float is a leading indicator of trouble.,Schedule
+TRIR / DART,Safety,"Total recordable incident rate and days away, restricted or transferred rate, both normalised per 200,000 hours worked.",Safety
+Turnover package,Closeout,"The assembled closeout documentation: as-builts, warranties, O&M manuals, test results and spare parts.",Closeout
+Unapproved change order,Cost control,Work performed on direction without an executed change order. One of the most common ways a job looks healthy until its final month.,Cost control
+Unbalanced bid,Commercial,"A bid pricing some items above and others below cost to improve cash flow, or to exploit an anticipated quantity change.",Bidding
+Underbilling,Finance,"Billing less than the value of work performed: a receivable in the work in progress report, and a cash-flow problem.",Finance
+WBS (Work Breakdown Structure),Planning,"The hierarchical decomposition of scope into manageable pieces, commonly aligned with cost codes and the schedule.",Planning and cost control
+WIP (Work In Progress),Finance,"The report comparing cost and earned revenue with billings, showing over- or under-billed positions across jobs.",Finance

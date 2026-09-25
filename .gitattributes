@@ -1,0 +1,3 @@
+# Normalise line endings so diffs stay clean across Windows and macOS.
+* text=auto eol=lf
+*.svg text eol=lf
