@@ -40,7 +40,7 @@ class Protocol(unittest.TestCase):
         init = replies[0]["result"]
         self.assertEqual(init["protocolVersion"], "2025-06-18")
         self.assertEqual(init["serverInfo"]["name"], "construction-reference")
-        self.assertEqual(init["capabilities"], {"tools": {"listChanged": False}})
+        self.assertEqual(init["capabilities"], {"tools": {"listChanged": False}, "resources": {"listChanged": False}})
         names = [t["name"] for t in replies[1]["result"]["tools"]]
         self.assertEqual(names, list(HANDLERS))
 
@@ -48,9 +48,25 @@ class Protocol(unittest.TestCase):
         init = session(dict(INIT, params={"protocolVersion": "1999-01-01"}))[0]["result"]
         self.assertEqual(init["protocolVersion"], SUPPORTED_VERSIONS[0])
 
+    def test_resources(self):
+        replies = session(
+            INIT,
+            {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
+            {"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": "construction-reference://data/glossary.csv"}},
+            {"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "file:///etc/passwd"}},
+        )
+        self.assertIn("resources", replies[0]["result"]["capabilities"])
+        uris = [r["uri"] for r in replies[1]["result"]["resources"]]
+        self.assertEqual(len(uris), 8)
+        self.assertTrue(all(u.startswith("construction-reference://data/") for u in uris))
+        content = replies[2]["result"]["contents"][0]
+        self.assertEqual(content["mimeType"], "text/csv")
+        self.assertTrue(content["text"].startswith("term,category,definition"))
+        self.assertEqual(replies[3]["error"]["code"], -32002, "only the bundled datasets can be read")
+
     def test_errors(self):
         replies = session(
-            {"jsonrpc": "2.0", "id": 1, "method": "resources/list"},
+            {"jsonrpc": "2.0", "id": 1, "method": "prompts/list"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "no_such_tool", "arguments": {}}},
             {"jsonrpc": "2.0", "id": 3, "method": "ping"},
         )
@@ -139,6 +155,36 @@ class Tools(unittest.TestCase):
         r = call("concrete_volume", length_ft="forty", width_ft=2, depth_in=6)
         self.assertTrue(r["isError"])
         self.assertIn("length_ft", r["content"][0]["text"])
+
+    def test_pay_unit_and_sequence_and_metrics(self):
+        r = call("pay_unit", scope="bulk excavation")["structuredContent"]["matches"][0]
+        self.assertEqual((r["pay_unit"], r["measure_basis"]), ("CY", "bank volume"))
+        self.assertEqual(len(call("trade_sequence")["structuredContent"]["steps"]), 30)
+        self.assertEqual(call("metric_formula", metric="TCPI")["structuredContent"]["matches"][0]["formula"], "(BAC - EV) / (BAC - AC)")
+
+    def test_earned_value(self):
+        r = call("earned_value", bac=1000000, ev=400000, ac=450000, pv=500000)["structuredContent"]
+        self.assertEqual((r["cost_variance"], r["cpi"], r["spi"]), (-50000.0, 0.889, 0.8))
+        self.assertEqual((r["eac_if_performance_continues"], r["eac_if_variance_was_one_off"]), (1125000.0, 1050000.0))
+        self.assertEqual(r["tcpi_to_finish_on_budget"], 1.091)
+        early = call("earned_value", bac=1000000, ev=50000, ac=60000)["structuredContent"]
+        self.assertTrue(any("unreliable" in w for w in early["warnings"]))
+        self.assertTrue(call("earned_value", bac=100, ev=200, ac=50)["isError"])
+
+    def test_retainage(self):
+        r = call("retainage", work_billed_to_date=500000, retainage_percent=10, previously_paid=380000)["structuredContent"]
+        self.assertEqual((r["retainage_outstanding"], r["due_this_application"]), (50000.0, 70000.0))
+        self.assertTrue(call("retainage", work_billed_to_date=1000, retainage_percent=10, released=500)["isError"])
+
+    def test_material_calculators(self):
+        r = call("rebar_weight", bar_size=5, length_ft=20, count=100)["structuredContent"]
+        self.assertEqual((r["weight_lb"], r["weight_tons"]), (2086.0, 1.043))
+        self.assertTrue(call("rebar_weight", bar_size=12, length_ft=20)["isError"])
+        r = call("masonry_units", wall_area_sf=1000, unit="cmu", openings_sf=80)["structuredContent"]
+        self.assertEqual((r["units_neat"], r["units_with_waste_range"]), (1035, [1087, 1139]))
+        self.assertEqual(call("masonry_units", wall_area_sf=100, unit="brick")["structuredContent"]["units_neat"], 675)
+        r = call("asphalt_tonnage", area_sf=9000, thickness_in=3)["structuredContent"]
+        self.assertEqual((r["area_sy"], r["tons_neat"]), (1000.0, 165.0))
 
     def test_in_process_server(self):
         server = Server(TOOLS, HANDLERS)

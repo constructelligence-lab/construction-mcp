@@ -1,26 +1,49 @@
 # Construction reference MCP server
 
 A small, offline [Model Context Protocol](https://modelcontextprotocol.io) server that gives an AI assistant
-construction reference data and a few calculators it would otherwise guess at: cost codes, construction terms,
-waste factors, unit conversions, concrete volumes, earthwork swell and shrink, and markup versus margin.
+construction reference data and calculators it would otherwise guess at: cost codes, construction terms, waste
+factors, pay units, the typical trade sequence, cost and schedule metrics, unit conversions, and calculators for
+concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup versus margin.
 
 It is one Python file tree with **no dependencies, no network access and no accounts**. The data ships with it.
 
-![tools](https://img.shields.io/badge/tools-7-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![network](https://img.shields.io/badge/network-none-2ea043) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
+![tools](https://img.shields.io/badge/tools-15-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![network](https://img.shields.io/badge/network-none-2ea043) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
 
 ## Tools
+
+**Reference lookups**
 
 | Tool | Ask it things like | Returns |
 | --- | --- | --- |
 | `lookup_cost_code` | "What cost code for slab on grade?" "List division 09" | Code, description, CSI division, cost type, unit, notes |
 | `define_term` | "What is retainage?" "What does AHJ mean?" | Glossary definitions from contract, cost control, field, safety and finance |
 | `waste_factor` | "What waste should I carry on tile?" | Planning low and high percent, basis, and what drives it |
+| `pay_unit` | "How is bulk excavation paid?" | Pay unit, measurement basis and usual exclusions |
+| `trade_sequence` | "What comes before drywall?" | Trade, activity, predecessor, duration driver and the constraint that usually bites |
+| `metric_formula` | "How is TCPI calculated?" | Formula, inputs, interpretation and caveats |
 | `convert_units` | "Convert 2 M3 to CY" "450 PSF in KSF" | The result, factor and notes. Refuses conversions that need more information, such as LF to SF |
+
+**Calculators**
+
+| Tool | Ask it things like | Returns |
+| --- | --- | --- |
 | `concrete_volume` | "40 by 30 slab, 6 inches thick" | Neat CF and CY, and order CY with a given waste or the planning range |
+| `rebar_weight` | "100 #5 bars at 20 feet" | Pounds and tons, with the waste range |
+| `masonry_units` | "1,000 SF of CMU wall with 80 SF of openings" | Units neat and with waste |
+| `asphalt_tonnage` | "9,000 SF paved at 3 inches" | Tons neat and with waste |
 | `earthwork_volume` | "1,000 bank yards of clay: how much to haul?" | Loose and compacted volume ranges |
+| `earned_value` | "BAC 1M, EV 400k, AC 450k, PV 500k" | CV, SV, CPI, SPI, two EACs, ETC, VAC and TCPI, with warnings when it is too early to trust them |
+| `retainage` | "10% retainage on 500k billed, 380k already paid" | Retainage held and outstanding, and the amount due |
 | `markup_margin` | "Cost 100,000 at 20% markup: what's my margin?" | Price, profit, markup and margin |
 
 Every tool is read-only and tells the model its results are planning values to be checked against your own data.
+
+## Resources
+
+The eight datasets behind the tools are also exposed as read-only MCP resources
+(`construction-reference://data/<name>.csv`), so a client can attach a whole table to a conversation: cost codes,
+glossary, waste factors, earthwork factors, unit conversions, pay units, trade sequence and metric formulas. Only
+these bundled files can be read.
 
 ## What it does not do
 
@@ -78,7 +101,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"m
 
 ## Protocol
 
-JSON-RPC 2.0 over stdio, one message per line. Implements `initialize`, `ping`, `tools/list` and `tools/call`,
+JSON-RPC 2.0 over stdio, one message per line. Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list` and `resources/read`,
 and accepts MCP protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05`. Tool results carry
 both a JSON text block and `structuredContent`. Input problems come back as tool results with `isError: true`,
 so the model can correct its call. Logging goes to stderr.

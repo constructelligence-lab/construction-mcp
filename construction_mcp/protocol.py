@@ -1,8 +1,8 @@
 """A minimal Model Context Protocol server over stdio.
 
 Standard library only. It speaks JSON-RPC 2.0, one message per line on stdin and stdout, and
-implements just what a tools-only server needs: ``initialize``, ``ping``, ``tools/list`` and
-``tools/call``. It opens no network port and makes no outbound connections: the only process that
+implements what a small read-only server needs: ``initialize``, ``ping``, ``tools/list``,
+``tools/call``, ``resources/list`` and ``resources/read``. It opens no network port and makes no outbound connections: the only process that
 can talk to it is the one that launched it.
 
 Logging goes to stderr, never stdout, because stdout carries the protocol.
@@ -24,6 +24,7 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+RESOURCE_NOT_FOUND = -32002
 
 INSTRUCTIONS = (
     "Offline construction reference data and calculators. Every tool is read-only and works from "
@@ -38,9 +39,16 @@ class ToolError(Exception):
 
 
 class Server:
-    def __init__(self, tools: list[dict[str, Any]], handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]]):
+    def __init__(
+        self,
+        tools: list[dict[str, Any]],
+        handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        resources: list[dict[str, Any]] | None = None,
+    ):
         self.tools = tools
         self.handlers = handlers
+        # each resource: uri, name, title, description, mimeType, and a "read" callable returning text
+        self.resources = {r["uri"]: r for r in (resources or [])}
 
     # ------------------------------------------------------------------ dispatch
 
@@ -69,6 +77,17 @@ class Server:
                 return _result(request_id, {"tools": self.tools})
             if method == "tools/call":
                 return self._call(request_id, params)
+            if method == "resources/list":
+                listed = [{k: v for k, v in r.items() if k != "read"} for r in self.resources.values()]
+                return _result(request_id, {"resources": listed})
+            if method == "resources/templates/list":
+                return _result(request_id, {"resourceTemplates": []})
+            if method == "resources/read":
+                resource = self.resources.get(params.get("uri"))
+                if resource is None:
+                    return _error(request_id, RESOURCE_NOT_FOUND, f"resource not found: {params.get('uri')}")
+                content = {"uri": resource["uri"], "mimeType": resource["mimeType"], "text": resource["read"]()}
+                return _result(request_id, {"contents": [content]})
             return _error(request_id, METHOD_NOT_FOUND, f"method not found: {method}")
         except Exception as exc:  # never let one bad request kill the server
             print(f"{SERVER_NAME}: internal error on {method}: {exc!r}", file=sys.stderr)
@@ -79,7 +98,7 @@ class Server:
         version = requested if requested in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
         return {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": {"tools": {"listChanged": False}, **({"resources": {"listChanged": False}} if self.resources else {})},
             "serverInfo": {"name": SERVER_NAME, "title": "Construction reference", "version": __version__},
             "instructions": INSTRUCTIONS,
         }

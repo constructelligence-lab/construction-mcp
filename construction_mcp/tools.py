@@ -257,6 +257,179 @@ def markup_margin(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- more lookups
+
+def pay_unit(args: dict[str, Any]) -> dict[str, Any]:
+    scope = _text(args, "scope")
+    rows = _rows("pay-units.csv")
+    hits = [r for r in rows if _matches(scope, r["scope_item"], r["trade"])]
+    if not hits:
+        raise ToolError(f"no pay unit for {scope!r}. Try a broader word; trades covered: {', '.join(sorted({r['trade'] for r in rows}))}")
+    return {"matches": hits[:10], "note": "Typical pay unit and measurement basis. Your contract's measurement clauses govern.", "source": SOURCE}
+
+
+def trade_sequence(args: dict[str, Any]) -> dict[str, Any]:
+    query = _text(args, "query", required=False)
+    rows = _rows("trade-sequence.csv")
+    hits = [r for r in rows if not query or _matches(query, r["trade"], r["activity"])]
+    if not hits:
+        raise ToolError(f"nothing in the typical sequence matches {query!r}")
+    return {
+        "steps": hits,
+        "note": "A typical commercial building sequence, as a logic skeleton. Real sequences depend on the building, the contract and the site.",
+        "source": SOURCE,
+    }
+
+
+def metric_formula(args: dict[str, Any]) -> dict[str, Any]:
+    query = _text(args, "metric")
+    rows = _rows("metric-formulas.csv")
+    hits = [r for r in rows if _matches(query, r["metric"])] or [r for r in rows if _matches(query, r["metric"], r["interpretation"])]
+    if not hits:
+        raise ToolError(f"no metric matches {query!r}. Available: {', '.join(r['metric'] for r in rows)}")
+    return {"matches": hits[:6], "source": SOURCE}
+
+
+# --------------------------------------------------------------------------- more calculators
+
+def earned_value(args: dict[str, Any]) -> dict[str, Any]:
+    bac = _number(args, "bac")
+    ev = _number(args, "ev")
+    ac = _number(args, "ac")
+    pv = _number(args, "pv", required=False)
+    if bac == 0 or ac == 0:
+        raise ToolError("'bac' and 'ac' must be greater than zero")
+    if ev > bac:
+        raise ToolError("'ev' (earned value) cannot exceed 'bac' (budget at completion)")
+    cpi = ev / ac
+    out: dict[str, Any] = {
+        "cost_variance": _round(ev - ac),
+        "cpi": _round(cpi, 3),
+        "percent_complete_earned": _round(ev / bac * 100, 1),
+        "percent_of_budget_spent": _round(ac / bac * 100, 1),
+    }
+    if cpi > 0:
+        eac = bac / cpi
+        out["eac_if_performance_continues"] = _round(eac)
+        out["etc_if_performance_continues"] = _round(eac - ac)
+        out["variance_at_completion"] = _round(bac - eac)
+    out["eac_if_variance_was_one_off"] = _round(ac + (bac - ev))
+    if bac != ac:
+        out["tcpi_to_finish_on_budget"] = _round((bac - ev) / (bac - ac), 3)
+    if pv is not None:
+        out["schedule_variance"] = _round(ev - pv)
+        if pv > 0:
+            out["spi"] = _round(ev / pv, 3)
+    warnings = []
+    if ev / bac < Decimal("0.15"):
+        warnings.append("Less than 15% earned: CPI and EAC are unreliable this early.")
+    if bac != ac and (bac - ev) / (bac - ac) > Decimal("1.1"):
+        warnings.append("TCPI above 1.1: finishing on budget needs much better cost performance than achieved so far.")
+    if ac >= bac:
+        warnings.append("Actual cost has reached the budget; the remaining work is already over budget.")
+    out["warnings"] = warnings
+    out["note"] = "SPI is cost-weighted and says nothing about the critical path; check the schedule for that."
+    return out
+
+
+def retainage(args: dict[str, Any]) -> dict[str, Any]:
+    billed = _number(args, "work_billed_to_date")
+    pct = _number(args, "retainage_percent")
+    released = _number(args, "released", required=False, default=0)
+    paid = _number(args, "previously_paid", required=False)
+    if pct > 100:
+        raise ToolError("'retainage_percent' cannot exceed 100")
+    held = billed * pct / 100
+    if released > held:
+        raise ToolError(f"'released' ({released}) is more than the retainage held ({_round(held)})")
+    out = {
+        "retainage_held_gross": _round(held),
+        "retainage_released": _round(released),
+        "retainage_outstanding": _round(held - released),
+        "earned_less_retainage": _round(billed - held + released),
+    }
+    if paid is not None:
+        out["due_this_application"] = _round(billed - held + released - paid)
+    out["note"] = "Contracts often reduce retainage at a milestone (for example, 50% complete). Apply your contract's terms."
+    return out
+
+
+def _material_factor(key: str) -> Decimal:
+    row = next(r for r in _rows("unit-conversions.csv") if r["from_unit"] == key)
+    return Decimal(row["factor"])
+
+
+def _waste(material: str) -> tuple[Decimal, Decimal]:
+    row = next(r for r in _rows("waste-factors.csv") if r["material"] == material)
+    return Decimal(row["planning_low_percent"]), Decimal(row["planning_high_percent"])
+
+
+def rebar_weight(args: dict[str, Any]) -> dict[str, Any]:
+    size = _number(args, "bar_size", minimum=3)
+    length = _number(args, "length_ft")
+    count = _number(args, "count", required=False, minimum=1, default=1)
+    if size != size.to_integral_value() or not 3 <= size <= 11:
+        raise ToolError("'bar_size' must be a US bar number from 3 to 11 (for example 5 for a #5 bar)")
+    per_ft = _material_factor(f"REBAR_{int(size)}")
+    pounds = per_ft * length * count
+    low, high = _waste("Reinforcing steel")
+    return {
+        "bar": f"#{int(size)}",
+        "lb_per_ft": float(per_ft),
+        "total_length_ft": _round(length * count, 1),
+        "weight_lb": _round(pounds, 1),
+        "weight_tons": _round(pounds / 2000, 3),
+        "with_waste_tons_range": [_round(pounds * (1 + low / 100) / 2000, 3), _round(pounds * (1 + high / 100) / 2000, 3)],
+        "note": "Nominal ASTM weights. Include laps, hooks and development lengths in the length you give. " + PLANNING_NOTE,
+        "source": SOURCE,
+    }
+
+
+MASONRY = {"cmu": ("CMU_8X8X16", "Masonry block", "8x8x16 concrete masonry units"), "brick": ("BRICK_MODULAR", "Brick", "modular brick")}
+
+
+def masonry_units(args: dict[str, Any]) -> dict[str, Any]:
+    area = _number(args, "wall_area_sf")
+    openings = _number(args, "openings_sf", required=False, default=0)
+    unit = _text(args, "unit").lower()
+    if unit not in MASONRY:
+        raise ToolError("'unit' must be 'cmu' (8x8x16 block) or 'brick' (modular brick)")
+    if openings >= area:
+        raise ToolError("'openings_sf' must be less than 'wall_area_sf'")
+    key, waste_name, label = MASONRY[unit]
+    per_sf = _material_factor(key)
+    net = area - openings
+    units = net * per_sf
+    low, high = _waste(waste_name)
+    return {
+        "unit": label,
+        "net_wall_area_sf": _round(net, 1),
+        "units_per_sf": float(per_sf),
+        "units_neat": int(units.to_integral_value(rounding=ROUND_HALF_UP)),
+        "units_with_waste_range": [int((units * (1 + p / 100)).to_integral_value(rounding="ROUND_CEILING")) for p in (low, high)],
+        "note": "Single wythe, nominal joints. Add special units (bond beam, lintel, corner) separately. " + PLANNING_NOTE,
+        "source": SOURCE,
+    }
+
+
+def asphalt_tonnage(args: dict[str, Any]) -> dict[str, Any]:
+    area_sf = _number(args, "area_sf")
+    thickness = _number(args, "thickness_in")
+    if area_sf == 0 or thickness == 0:
+        raise ToolError("'area_sf' and 'thickness_in' must be greater than zero")
+    area_sy = area_sf / 9
+    tons = area_sy * thickness * _material_factor("ASPHALT_SY_IN")
+    low, high = _waste("Asphalt concrete")
+    return {
+        "area_sy": _round(area_sy, 1),
+        "compacted_thickness_in": float(thickness),
+        "tons_neat": _round(tons, 1),
+        "tons_with_waste_range": [_round(tons * (1 + low / 100), 1), _round(tons * (1 + high / 100), 1)],
+        "note": "Uses about 110 lb per square yard per inch of compacted mix. Mix density varies: use the plant's figure when you have it. " + PLANNING_NOTE,
+        "source": SOURCE,
+    }
+
+
 # --------------------------------------------------------------------------- definitions
 
 def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
@@ -349,6 +522,98 @@ TOOLS: list[dict[str, Any]] = [
         ),
         "annotations": READ_ONLY,
     },
+    {
+        "name": "pay_unit",
+        "title": "Pay unit for a scope item",
+        "description": "The typical pay unit and measurement basis for a scope item (for example bulk excavation is paid by the CY, bank measure), with what is usually excluded.",
+        "inputSchema": _schema({"scope": {"type": "string", "description": "e.g. 'excavation', 'curb', 'drywall'"}}, ["scope"]),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "trade_sequence",
+        "title": "Typical trade sequence",
+        "description": "A typical commercial building sequence: each step's trade, activity, usual predecessor, what drives its duration, and the constraint that usually delays it. Give a query to filter, or none for the whole sequence.",
+        "inputSchema": _schema({"query": {"type": "string", "description": "Optional, e.g. 'drywall' or 'roofing'"}}, []),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "metric_formula",
+        "title": "Cost and schedule metric formula",
+        "description": "The formula, inputs, interpretation and caveats for a cost or schedule metric: CPI, SPI, EAC, TCPI, over/under billing, DSO, float consumed and others.",
+        "inputSchema": _schema({"metric": {"type": "string", "description": "e.g. 'CPI', 'estimate at completion', 'overbilling'"}}, ["metric"]),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "earned_value",
+        "title": "Earned value analysis",
+        "description": "From budget at completion, earned value and actual cost (and optionally planned value), compute cost and schedule variance, CPI, SPI, two estimates at completion, ETC, VAC and TCPI, with warnings when the numbers are not yet meaningful.",
+        "inputSchema": _schema(
+            {
+                "bac": {"type": "number", "exclusiveMinimum": 0, "description": "Budget at completion"},
+                "ev": {"type": "number", "minimum": 0, "description": "Earned value: budgeted cost of work performed"},
+                "ac": {"type": "number", "exclusiveMinimum": 0, "description": "Actual cost to date"},
+                "pv": {"type": "number", "minimum": 0, "description": "Optional planned value to date"},
+            },
+            ["bac", "ev", "ac"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "retainage",
+        "title": "Retainage on a pay application",
+        "description": "Retainage held, released and outstanding on work billed to date, and optionally the amount due this application after previous payments.",
+        "inputSchema": _schema(
+            {
+                "work_billed_to_date": {"type": "number", "minimum": 0},
+                "retainage_percent": {"type": "number", "minimum": 0, "maximum": 100},
+                "released": {"type": "number", "minimum": 0, "default": 0},
+                "previously_paid": {"type": "number", "minimum": 0},
+            },
+            ["work_billed_to_date", "retainage_percent"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "rebar_weight",
+        "title": "Rebar weight",
+        "description": "Weight of US reinforcing bars (#3 to #11) from bar size, length and count, in pounds and tons, with the planning waste range.",
+        "inputSchema": _schema(
+            {
+                "bar_size": {"type": "integer", "minimum": 3, "maximum": 11, "description": "Bar number, e.g. 5 for #5"},
+                "length_ft": {"type": "number", "exclusiveMinimum": 0, "description": "Length of one bar including laps and hooks"},
+                "count": {"type": "integer", "minimum": 1, "default": 1},
+            },
+            ["bar_size", "length_ft"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "masonry_units",
+        "title": "Masonry unit count",
+        "description": "Number of 8x8x16 CMU or modular brick for a single-wythe wall area, less openings, with the planning waste range.",
+        "inputSchema": _schema(
+            {
+                "wall_area_sf": {"type": "number", "exclusiveMinimum": 0},
+                "unit": {"type": "string", "enum": ["cmu", "brick"]},
+                "openings_sf": {"type": "number", "minimum": 0, "default": 0},
+            },
+            ["wall_area_sf", "unit"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "asphalt_tonnage",
+        "title": "Asphalt tonnage",
+        "description": "Tons of hot-mix asphalt for a paved area and compacted thickness, with the planning waste range.",
+        "inputSchema": _schema(
+            {
+                "area_sf": {"type": "number", "exclusiveMinimum": 0},
+                "thickness_in": {"type": "number", "exclusiveMinimum": 0, "description": "Compacted thickness in inches"},
+            },
+            ["area_sf", "thickness_in"],
+        ),
+        "annotations": READ_ONLY,
+    },
 ]
 
 HANDLERS = {
@@ -359,4 +624,36 @@ HANDLERS = {
     "concrete_volume": concrete_volume,
     "earthwork_volume": earthwork_volume,
     "markup_margin": markup_margin,
+    "pay_unit": pay_unit,
+    "trade_sequence": trade_sequence,
+    "metric_formula": metric_formula,
+    "earned_value": earned_value,
+    "retainage": retainage,
+    "rebar_weight": rebar_weight,
+    "masonry_units": masonry_units,
+    "asphalt_tonnage": asphalt_tonnage,
 }
+
+
+DATASETS = {
+    "cost-codes.csv": "Starter cost code taxonomy mapped to CSI divisions",
+    "glossary.csv": "Construction glossary: contracts, cost control, field, safety, finance",
+    "waste-factors.csv": "Planning waste ranges by material, with drivers",
+    "earthwork-volume-factors.csv": "Bank, loose and compacted volume factors by soil type",
+    "unit-conversions.csv": "Unit conversions and material factors",
+    "pay-units.csv": "Typical pay unit and measurement basis per scope item",
+    "trade-sequence.csv": "Typical commercial trade sequence with predecessors and constraints",
+    "metric-formulas.csv": "Cost and schedule metric formulas with caveats",
+}
+
+RESOURCES: list[dict[str, Any]] = [
+    {
+        "uri": f"construction-reference://data/{name}",
+        "name": name,
+        "title": title,
+        "description": f"{title}. CSV, CC BY 4.0, from construction-data.",
+        "mimeType": "text/csv",
+        "read": (lambda n=name: (DATA / n).read_text(encoding="utf-8")),
+    }
+    for name, title in DATASETS.items()
+]

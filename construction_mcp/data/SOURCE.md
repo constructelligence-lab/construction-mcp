@@ -12,6 +12,9 @@ Constructelligence (constructelligence.co).
 | `waste-factors.csv` | `data/measures/waste-factors.csv` |
 | `earthwork-volume-factors.csv` | `data/measures/earthwork-volume-factors.csv` |
 | `unit-conversions.csv` | `data/measures/unit-conversions.csv` |
+| `pay-units.csv` | `data/scope/pay-units.csv` |
+| `trade-sequence.csv` | `data/schedule/typical-trade-sequence.csv` |
+| `metric-formulas.csv` | `data/metrics/metric-formulas.csv` |
 
 To update, copy the new files over these and run the tests. Corrections to the data belong in construction-data,
 not here.
