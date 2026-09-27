@@ -113,15 +113,23 @@ The reference data is copied from
 belong. See [`construction_mcp/data/SOURCE.md`](construction_mcp/data/SOURCE.md). The cost codes use an
 independent numbering mapped to CSI division titles only; they are a starting point, not a standard.
 
-## Related
+<!-- begin:family -->
+## More from Constructelligence
 
-- [construction-data](https://github.com/constructelligence-lab/construction-data): the reference data behind these tools.
-- [construction-data-migration](https://github.com/constructelligence-lab/construction-data-migration): a guide and
-  toolkit for moving a construction company between systems, and proving nothing was lost.
-- [construction-agent-skills](https://github.com/constructelligence-lab/construction-agent-skills): installable
-  skills for estimating, scheduling, site and commercial work.
+Open construction resources from the same team, all maintained alongside this one:
 
-Questions or a tool you would like to see? [Open an issue](https://github.com/constructelligence-lab/construction-mcp/issues).
+| Repository | What it is |
+| --- | --- |
+| [AI in construction](https://github.com/constructelligence-lab/ai-in-construction) | A practical guide to AI in construction: what works today, what the data has to look like, the risks, and a 90-day plan. |
+| [Construction data migration](https://github.com/constructelligence-lab/construction-data-migration) | A guide and toolkit for moving a contractor between systems, and proving nothing was lost. |
+| [Construction project records](https://github.com/constructelligence-lab/construction-project-records) | Open schemas, templates and a checker for RFIs, submittals, change events, daily reports and punch lists. |
+| [Construction reference data](https://github.com/constructelligence-lab/construction-data) | Cost codes, units, waste factors, pay units, trade sequence, glossary and metric formulas in CSV. |
+| [Construction prompts](https://github.com/constructelligence-lab/construction-prompts) | 28 prompts for ChatGPT, Claude and Gemini, from bid go/no-go to notice letters. |
+| [Construction agent skills](https://github.com/constructelligence-lab/construction-agent-skills) | 28 installable agent skills for Claude Code and any agent that reads SKILL.md. |
+| [Open source construction tools](https://github.com/constructelligence-lab/open-source-construction-tools) | Open source software for BIM, CAD, scheduling and site work, verified against the GitHub API. |
+
+<!-- end:family -->
+
 
 ## Licence
 
