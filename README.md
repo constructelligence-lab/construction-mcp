@@ -7,9 +7,10 @@ concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup
 arithmetic models most often get wrong: a **critical path** pass over your activities, **pay application** totals
 and **change order** markups.
 
-It is one Python file tree with **no dependencies, no network access and no accounts**. The data ships with it.
+It is one Python file tree with **no dependencies, no outbound network access and no accounts**. The data ships
+with it. Run it locally over stdio, or [host it at a URL](#host-it-online) for a team or for claude.ai.
 
-![tools](https://img.shields.io/badge/tools-18-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![network](https://img.shields.io/badge/network-none-2ea043) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
+![tools](https://img.shields.io/badge/tools-18-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![outbound network](https://img.shields.io/badge/outbound%20network-none-2ea043) ![transports](https://img.shields.io/badge/transports-stdio%20%2B%20HTTP-1f6feb) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
 
 ## Tools
 
@@ -70,8 +71,9 @@ these bundled files can be read.
 
 ## What it does not do
 
-- **No network.** It never opens a port or makes a request. It talks only to the application that launched it,
-  over standard input and output.
+- **No outbound network.** It never makes a request to anything. By default it talks only to the application that
+  launched it, over standard input and output; in HTTP mode it listens on the port you give it and still calls
+  nothing. A test fails the build if network client code appears.
 - **No connections.** It does not connect to any accounting, project management or scheduling system, to any
   Constructelligence product or server, or to anything else.
 - **No files, no memory.** It reads only its own bundled data. It does not read your files, write anything, or
@@ -116,6 +118,56 @@ claude mcp add construction-reference -- python3 /path/to/construction-mcp/serve
 
 Nothing is installed system-wide, and removing it is deleting the folder and that entry.
 
+## Host it online
+
+The same server speaks MCP's Streamable HTTP transport, so you can run it once and let everyone connect by URL:
+your team, Claude Code with `--transport http`, or claude.ai as a custom connector.
+
+```bash
+python3 server.py --http                      # http://127.0.0.1:8000/mcp, this machine only
+python3 server.py --http --host 0.0.0.0 --token "$(openssl rand -hex 24)"
+```
+
+Or with Docker, which listens on `$PORT` (default 8000):
+
+```bash
+docker build -t construction-mcp .
+docker run -p 8000:8000 -e CONSTRUCTION_MCP_TOKEN=your-long-random-token construction-mcp
+```
+
+Then connect a client:
+
+```bash
+claude mcp add --transport http construction-reference https://your-host.example/mcp \
+  --header "Authorization: Bearer your-long-random-token"
+```
+
+| Option | Environment variable | Default | What it does |
+| --- | --- | --- | --- |
+| `--http` | `CONSTRUCTION_MCP_HTTP=1` | off (stdio) | Serve HTTP instead of stdio |
+| `--host` | `HOST` | `127.0.0.1` | Address to listen on. Use `0.0.0.0` in a container |
+| `--port` | `PORT` | `8000` | Port |
+| `--path` | `CONSTRUCTION_MCP_PATH` | `/mcp` | Endpoint path |
+| `--token` | `CONSTRUCTION_MCP_TOKEN` | none | Require `Authorization: Bearer <token>` |
+| `--allowed-origin` | `CONSTRUCTION_MCP_ALLOWED_ORIGINS` (comma-separated) | none | Browser origins allowed to call it |
+| `--rate-limit` | `CONSTRUCTION_MCP_RATE_LIMIT` | `120` | Requests per minute per client IP; `0` turns it off |
+| `--trust-proxy` | `CONSTRUCTION_MCP_TRUST_PROXY=1` | off | Rate-limit by `X-Forwarded-For`; only behind a proxy you run |
+
+What the HTTP mode does to stay safe when it is reachable:
+
+- **Local by default.** It binds to `127.0.0.1` unless you choose another address, and warns if you expose it with no token.
+- **Origin checks.** Browser requests from an origin you haven't allowed get a 403, which blocks DNS rebinding.
+  On a local bind, `localhost` pages are allowed so the MCP Inspector works.
+- **Limits.** Bodies over 1 MB get a 413, stalled connections time out after 30 seconds, and each client IP has a
+  request budget per minute (429 when spent).
+- **Stateless.** No sessions and no server-to-client stream, so `GET /mcp` returns 405. Every request stands alone,
+  which makes it easy to run behind a load balancer. `GET /health` is a token-free health check.
+
+Use HTTPS in front of it (your platform's load balancer, Caddy or nginx) for anything beyond your own machine. The
+token is a shared secret, not per-user sign-in. claude.ai custom connectors expect either no authentication or
+OAuth, so to add it there, run it without a token. The tools are read-only and the data is public, so the rate limit is
+then the main protection.
+
 ## Check it works
 
 ```bash
@@ -130,9 +182,10 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"m
 
 ## Protocol
 
-JSON-RPC 2.0 over stdio, one message per line. Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`,
-`prompts/list` and `prompts/get`,
-and accepts MCP protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05`. Tool results carry
+JSON-RPC 2.0, either over stdio (one message per line) or over Streamable HTTP (stateless, one JSON response per
+POST, 202 for notifications). Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`,
+`resources/read`, `prompts/list` and `prompts/get`, and accepts MCP protocol versions `2025-11-25`, `2025-06-18`,
+`2025-03-26` and `2024-11-05`; over HTTP an unsupported `MCP-Protocol-Version` header gets a 400. Tool results carry
 both a JSON text block and `structuredContent`. Input problems come back as tool results with `isError: true`,
 so the model can correct its call. Logging goes to stderr.
 

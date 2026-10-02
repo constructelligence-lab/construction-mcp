@@ -5,10 +5,15 @@ Run: python3 -m unittest discover -s tests
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import re
 import subprocess
 import sys
+import threading
+import urllib.error
+import urllib.request
 import unittest
 from pathlib import Path
 
@@ -93,11 +98,14 @@ class Protocol(unittest.TestCase):
             self.assertFalse(tool["annotations"]["openWorldHint"], tool["name"])
             self.assertFalse(tool["inputSchema"]["additionalProperties"], tool["name"])
 
-    def test_no_network_code(self):
-        source = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "construction_mcp").glob("*.py"))
-        for module in ("socket", "urllib", "http.client", "requests", "ssl", "subprocess"):
+    def test_no_outbound_network_code(self):
+        files = {p.name: p.read_text(encoding="utf-8") for p in (ROOT / "construction_mcp").glob("*.py")}
+        source = "".join(files.values())
+        # it may listen (HTTP mode) but never calls out
+        for module in ("socket", "urllib.request", "http.client", "requests", "httpx", "aiohttp", "urllib3", "ssl", "subprocess", "ftplib", "smtplib"):
             self.assertNotIn(f"import {module}", source)
-            self.assertNotIn(f"from {module}", source)
+            self.assertNotIn(f"from {module} ", source)
+        self.assertEqual([n for n, text in files.items() if "http.server" in text], ["http_transport.py"], "only the HTTP transport may listen")
 
 
 class Tools(unittest.TestCase):
@@ -286,6 +294,111 @@ class Tools(unittest.TestCase):
         reply = server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "define_term", "arguments": {"term": "retainage"}}})
         self.assertFalse(reply["result"]["isError"])
         self.assertIsNone(server.handle({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {}}))
+
+
+class Http(unittest.TestCase):
+    """The Streamable HTTP transport, run in-process on a free port."""
+
+    def start(self, **options) -> str:
+        from construction_mcp.http_transport import serve_http
+        from construction_mcp.prompts import PROMPTS, get_prompt
+
+        ready, holder = threading.Event(), {}
+        server = Server(TOOLS, HANDLERS, None, PROMPTS, get_prompt)
+        thread = threading.Thread(target=serve_http, args=(server,), kwargs=dict(port=0, ready=ready, holder=holder, **options), daemon=True)
+        with contextlib.redirect_stderr(io.StringIO()):
+            thread.start()
+            ready.wait(5)
+        self.addCleanup(holder["httpd"].shutdown)
+        return f"http://127.0.0.1:{holder['port']}"
+
+    def post(self, url: str, body, headers=None):
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        request = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", **(headers or {})})
+        return self.open(request)
+
+    def open(self, request):
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                text = response.read().decode()
+                return response.status, dict(response.headers), json.loads(text) if text else None
+        except urllib.error.HTTPError as error:
+            text = error.read().decode()
+            return error.code, dict(error.headers), json.loads(text) if text else None
+
+    def test_round_trip(self):
+        base = self.start()
+        status, _, body = self.post(base + "/mcp", INIT)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["result"]["serverInfo"]["name"], "construction-reference")
+        status, _, body = self.post(base + "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "markup_margin", "arguments": {"cost": 100, "markup_percent": 20}}}, {"MCP-Protocol-Version": "2025-06-18"})
+        self.assertEqual((status, body["result"]["structuredContent"]["price"]), (200, 120.0))
+        status, _, body = self.post(base + "/mcp", {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        self.assertEqual((status, body), (202, None))
+        status, _, body = self.open(urllib.request.Request(base + "/health"))
+        self.assertEqual((status, body["status"]), (200, "ok"))
+        self.assertEqual(self.open(urllib.request.Request(base + "/mcp"))[0], 405, "no server-sent event stream")
+        self.assertEqual(self.open(urllib.request.Request(base + "/elsewhere"))[0], 404)
+
+    def test_rejections(self):
+        base = self.start()
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        self.assertEqual(self.post(base + "/mcp", ping, {"MCP-Protocol-Version": "1999-01-01"})[0], 400)
+        self.assertEqual(self.post(base + "/mcp", b"{not json")[2]["error"]["code"], -32700)
+        self.assertEqual(self.post(base + "/mcp", ping, {"Content-Type": "text/plain"})[0], 415)
+        self.assertEqual(self.post(base + "/mcp", b"x" * 1_000_001)[0], 413)
+        # DNS rebinding: a page on another site must not reach a local server
+        self.assertEqual(self.post(base + "/mcp", ping, {"Origin": "https://evil.example"})[0], 403)
+        status, headers, _ = self.post(base + "/mcp", ping, {"Origin": "http://localhost:6274"})
+        self.assertEqual((status, headers.get("Access-Control-Allow-Origin")), (200, "http://localhost:6274"))
+
+    def test_allowed_origin_and_token(self):
+        base = self.start(token="s3cret", allowed_origins=["https://app.example"])
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        status, headers, _ = self.post(base + "/mcp", ping)
+        self.assertEqual(status, 401)
+        self.assertIn("Bearer", headers["WWW-Authenticate"])
+        self.assertEqual(self.post(base + "/mcp", ping, {"Authorization": "Bearer wrong"})[0], 401)
+        self.assertEqual(self.post(base + "/mcp", ping, {"Authorization": "Bearer s3cret", "Origin": "https://app.example"})[0], 200)
+        self.assertEqual(self.post(base + "/mcp", ping, {"Authorization": "Bearer s3cret", "Origin": "https://other.example"})[0], 403)
+        self.assertEqual(self.open(urllib.request.Request(base + "/health"))[0], 200, "health needs no token")
+
+    def test_keep_alive_connection_survives_rejections(self):
+        import http.client
+
+        base = self.start(token="t")
+        conn = http.client.HTTPConnection(base.replace("http://", ""), timeout=10)
+        self.addCleanup(conn.close)
+        ping = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        good = {"Content-Type": "application/json", "Authorization": "Bearer t"}
+        for _ in range(2):
+            conn.request("POST", "/mcp", ping, good)
+            response = conn.getresponse()
+            self.assertEqual((response.status, json.loads(response.read())["result"]), (200, {}))
+        # a rejected request with an unread body must not leak that body into the next request
+        conn.request("POST", "/mcp", ping, {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        response.read()
+        self.assertEqual((response.status, response.getheader("Connection")), (401, "close"))
+        conn.close()
+        conn.request("POST", "/mcp", ping, good)
+        self.assertEqual(conn.getresponse().status, 200)
+
+    def test_rate_limit(self):
+        base = self.start(rate_limit_per_minute=3)
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        codes = [self.post(base + "/mcp", ping)[0] for _ in range(5)]
+        self.assertEqual(codes[:3], [200, 200, 200])
+        self.assertEqual(codes[-1], 429)
+
+    def test_command_line(self):
+        proc = subprocess.Popen([sys.executable, str(ROOT / "server.py"), "--http", "--port", "0"], stderr=subprocess.PIPE, text=True)
+        self.addCleanup(proc.wait, 10)
+        self.addCleanup(proc.terminate)
+        line = proc.stderr.readline()
+        url = re.search(r"http://\S+", line).group(0)
+        status, _, body = self.post(url, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        self.assertEqual((status, len(body["result"]["tools"])), (200, len(TOOLS)))
 
 
 if __name__ == "__main__":

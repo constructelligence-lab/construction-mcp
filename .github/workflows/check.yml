@@ -18,3 +18,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Tests (the real server, over stdio)
         run: python3 -m unittest discover -s tests -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t construction-mcp .
+      - name: Run it and call it over HTTP
+        run: |
+          docker run -d --name mcp -p 8000:8000 -e CONSTRUCTION_MCP_TOKEN=ci-token construction-mcp
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/health && break; sleep 1; done
+          curl -fs -H 'Authorization: Bearer ci-token' -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://127.0.0.1:8000/mcp | grep -q critical_path
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8000/mcp)" = 401
+          docker logs mcp
