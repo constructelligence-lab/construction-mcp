@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -40,7 +41,7 @@ class Protocol(unittest.TestCase):
         init = replies[0]["result"]
         self.assertEqual(init["protocolVersion"], "2025-06-18")
         self.assertEqual(init["serverInfo"]["name"], "construction-reference")
-        self.assertEqual(init["capabilities"], {"tools": {"listChanged": False}, "resources": {"listChanged": False}})
+        self.assertEqual(init["capabilities"], {"tools": {"listChanged": False}, "resources": {"listChanged": False}, "prompts": {"listChanged": False}})
         names = [t["name"] for t in replies[1]["result"]["tools"]]
         self.assertEqual(names, list(HANDLERS))
 
@@ -66,7 +67,7 @@ class Protocol(unittest.TestCase):
 
     def test_errors(self):
         replies = session(
-            {"jsonrpc": "2.0", "id": 1, "method": "prompts/list"},
+            {"jsonrpc": "2.0", "id": 1, "method": "sampling/createMessage"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "no_such_tool", "arguments": {}}},
             {"jsonrpc": "2.0", "id": 3, "method": "ping"},
         )
@@ -185,6 +186,100 @@ class Tools(unittest.TestCase):
         self.assertEqual(call("masonry_units", wall_area_sf=100, unit="brick")["structuredContent"]["units_neat"], 675)
         r = call("asphalt_tonnage", area_sf=9000, thickness_in=3)["structuredContent"]
         self.assertEqual((r["area_sy"], r["tons_neat"]), (1000.0, 165.0))
+
+    def test_critical_path(self):
+        # a textbook network worked by hand: A-B-D-F is critical at 14 days; C and E share 4 days of float
+        activities = [
+            {"id": "A", "duration": 3},
+            {"id": "B", "duration": 4, "predecessors": ["A"]},
+            {"id": "C", "duration": 2, "predecessors": ["A"]},
+            {"id": "D", "duration": 5, "predecessors": ["B"]},
+            {"id": "E", "duration": 3, "predecessors": ["C"]},
+            {"id": "F", "duration": 2, "predecessors": ["D", "E"]},
+        ]
+        r = call("critical_path", activities=activities, start_date="2026-10-05")["structuredContent"]
+        self.assertEqual((r["project_duration"], r["critical_path"], r["near_critical"]), (14, ["A", "B", "D", "F"], ["C", "E"]))
+        by_id = {a["id"]: a for a in r["activities"]}
+        self.assertEqual((by_id["C"]["total_float"], by_id["C"]["free_float"]), (4, 0))
+        self.assertEqual((by_id["E"]["total_float"], by_id["E"]["free_float"]), (4, 4))
+        # day 0 is Monday 5 October; 14 working days end on Thursday 22 October, skipping the weekend
+        self.assertEqual((by_id["A"]["finish_date"], by_id["F"]["start_date"], r["finish_date"]), ("2026-10-07", "2026-10-21", "2026-10-22"))
+
+        # start-to-start and finish-to-finish lags
+        r = call("critical_path", activities=[
+            {"id": "Frame", "duration": 10},
+            {"id": "Rough", "duration": 8, "predecessors": [{"id": "Frame", "type": "SS", "lag": 3}]},
+            {"id": "Board", "duration": 6, "predecessors": [{"id": "Rough", "type": "FF", "lag": 2}]},
+        ])["structuredContent"]
+        self.assertEqual((r["project_duration"], r["critical_path"]), (13, ["Frame", "Rough", "Board"]))
+        self.assertEqual([a["early_start"] for a in r["activities"]], [0, 3, 7])
+        self.assertTrue(any("no successor depending on their finish (Frame, Board)" in w for w in r["warnings"]), "Frame only drives a start: its finish dangles")
+
+        loop = call("critical_path", activities=[{"id": "A", "duration": 1, "predecessors": ["B"]}, {"id": "B", "duration": 1, "predecessors": ["A"]}])
+        self.assertTrue(loop["isError"])
+        self.assertIn("loop", loop["content"][0]["text"])
+        self.assertTrue(call("critical_path", activities=[{"id": "A", "duration": 1, "predecessors": ["Z"]}])["isError"])
+        self.assertTrue(call("critical_path", activities=[{"id": "A", "duration": 1.5}], start_date="2026-10-05")["isError"])
+
+    def test_pay_application(self):
+        lines = [
+            {"description": "Concrete", "scheduled_value": 100000, "previous_completed": 60000, "this_period": 20000},
+            {"description": "Steel", "scheduled_value": 80000, "previous_completed": 40000, "this_period": 10000, "stored_materials": 15000},
+            {"description": "Doors", "scheduled_value": 10000, "previous_completed": 9000, "this_period": 2000},
+        ]
+        r = call("pay_application", lines=lines, retainage_percent=10, stored_materials_retainage_percent=5, previous_certificates=90000)["structuredContent"]
+        s = r["summary"]
+        self.assertEqual((s["total_completed_and_stored_to_date"], s["total_retainage"]), (156000, 14850))
+        self.assertEqual((s["total_earned_less_retainage"], s["current_payment_due"], s["balance_to_finish_including_retainage"]), (141150, 51150, 48850))
+        self.assertEqual(len(r["warnings"]), 1)
+        self.assertIn("Doors", r["warnings"][0])
+        self.assertTrue(call("pay_application", lines=[], retainage_percent=10)["isError"])
+
+    def test_change_order_markup(self):
+        r = call("change_order_markup", labor=10000, labor_burden_percent=35, material=5000, subcontract=20000,
+                 overhead_percent=10, profit_percent=10, subcontract_markup_percent=5, bond_percent=1)["structuredContent"]
+        # own forces 18,500 + OH 1,850 + profit 2,035 on cost plus OH; sub 20,000 + 1,000; bond 1% of 43,385
+        self.assertEqual(r["total"], 43818.85)
+        self.assertEqual(r["direct_cost_with_burden"], 38500)
+        flat = call("change_order_markup", material=1000, overhead_percent=10, profit_percent=10, profit_on_overhead=False)["structuredContent"]
+        self.assertEqual(flat["total"], 1200)
+        self.assertEqual(call("change_order_markup", material=1000, overhead_percent=10, profit_percent=10)["structuredContent"]["total"], 1210)
+        self.assertTrue(call("change_order_markup", overhead_percent=10)["isError"])
+
+    def test_prompts(self):
+        replies = session(
+            INIT,
+            {"jsonrpc": "2.0", "id": 1, "method": "prompts/list"},
+            {"jsonrpc": "2.0", "id": 2, "method": "prompts/get", "params": {"name": "draft_rfi", "arguments": {"issue": "Beam B4 clashes with the duct on grid C", "references": "S-201 detail 4"}}},
+            {"jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": {"name": "draft_rfi", "arguments": {}}},
+            {"jsonrpc": "2.0", "id": 4, "method": "prompts/get", "params": {"name": "no_such_prompt"}},
+        )
+        names = [p["name"] for p in replies[1]["result"]["prompts"]]
+        self.assertEqual(names, ["draft_rfi", "check_pay_application", "review_change_order", "schedule_review", "quantity_takeoff"])
+        self.assertTrue(all("render" not in p for p in replies[1]["result"]["prompts"]))
+        message = replies[2]["result"]["messages"][0]
+        self.assertEqual(message["role"], "user")
+        self.assertIn("Beam B4", message["content"]["text"])
+        self.assertIn("S-201 detail 4", message["content"]["text"])
+        self.assertEqual(replies[3]["error"]["code"], -32602)
+        self.assertEqual(replies[4]["error"]["code"], -32602)
+
+    def test_prompts_only_name_real_tools(self):
+        from construction_mcp.prompts import PROMPTS
+
+        for prompt in PROMPTS:
+            text = prompt["render"]({a["name"]: "x" for a in prompt["arguments"]})
+            for word in re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", text):
+                self.assertIn(word, HANDLERS, f"{prompt['name']} mentions {word}, which is not a tool")
+
+    def test_readme_counts_match(self):
+        from construction_mcp.prompts import PROMPTS
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"badge/tools-{len(TOOLS)}-", readme)
+        self.assertIn(f"badge/prompts-{len(PROMPTS)}-", readme)
+        for tool in TOOLS:
+            self.assertIn(f"| `{tool['name']}` |", readme, f"{tool['name']} is missing from the README tables")
 
     def test_in_process_server(self):
         server = Server(TOOLS, HANDLERS)

@@ -2,7 +2,7 @@
 
 Standard library only. It speaks JSON-RPC 2.0, one message per line on stdin and stdout, and
 implements what a small read-only server needs: ``initialize``, ``ping``, ``tools/list``,
-``tools/call``, ``resources/list`` and ``resources/read``. It opens no network port and makes no outbound connections: the only process that
+``tools/call``, ``resources/list``, ``resources/read``, ``prompts/list`` and ``prompts/get``. It opens no network port and makes no outbound connections: the only process that
 can talk to it is the one that launched it.
 
 Logging goes to stderr, never stdout, because stdout carries the protocol.
@@ -30,7 +30,9 @@ INSTRUCTIONS = (
     "Offline construction reference data and calculators. Every tool is read-only and works from "
     "data bundled with the server; nothing is fetched from the network. Results are planning "
     "values and general reference, not project-specific advice: say so when you use them, and "
-    "tell the user to verify quantities, factors and prices against their own data."
+    "tell the user to verify quantities, factors and prices against their own data. For schedule "
+    "dates and float, pay application totals, change order markups and quantities, call the "
+    "calculator instead of doing the arithmetic yourself."
 )
 
 
@@ -44,11 +46,16 @@ class Server:
         tools: list[dict[str, Any]],
         handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
         resources: list[dict[str, Any]] | None = None,
+        prompts: list[dict[str, Any]] | None = None,
+        get_prompt: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
     ):
         self.tools = tools
         self.handlers = handlers
         # each resource: uri, name, title, description, mimeType, and a "read" callable returning text
         self.resources = {r["uri"]: r for r in (resources or [])}
+        # each prompt: name, title, description, arguments, and a "render" callable used by get_prompt
+        self.prompts = prompts or []
+        self.get_prompt = get_prompt
 
     # ------------------------------------------------------------------ dispatch
 
@@ -88,6 +95,16 @@ class Server:
                     return _error(request_id, RESOURCE_NOT_FOUND, f"resource not found: {params.get('uri')}")
                 content = {"uri": resource["uri"], "mimeType": resource["mimeType"], "text": resource["read"]()}
                 return _result(request_id, {"contents": [content]})
+            if method == "prompts/list" and self.prompts:
+                listed = [{k: v for k, v in p.items() if k != "render"} for p in self.prompts]
+                return _result(request_id, {"prompts": listed})
+            if method == "prompts/get" and self.prompts and self.get_prompt:
+                try:
+                    return _result(request_id, self.get_prompt(params.get("name"), params.get("arguments") or {}))
+                except KeyError:
+                    return _error(request_id, INVALID_PARAMS, f"unknown prompt: {params.get('name')}")
+                except ToolError as exc:
+                    return _error(request_id, INVALID_PARAMS, str(exc))
             return _error(request_id, METHOD_NOT_FOUND, f"method not found: {method}")
         except Exception as exc:  # never let one bad request kill the server
             print(f"{SERVER_NAME}: internal error on {method}: {exc!r}", file=sys.stderr)
@@ -98,7 +115,11 @@ class Server:
         version = requested if requested in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
         return {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}, **({"resources": {"listChanged": False}} if self.resources else {})},
+            "capabilities": {
+                "tools": {"listChanged": False},
+                **({"resources": {"listChanged": False}} if self.resources else {}),
+                **({"prompts": {"listChanged": False}} if self.prompts else {}),
+            },
             "serverInfo": {"name": SERVER_NAME, "title": "Construction reference", "version": __version__},
             "instructions": INSTRUCTIONS,
         }

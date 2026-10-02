@@ -3,11 +3,13 @@
 A small, offline [Model Context Protocol](https://modelcontextprotocol.io) server that gives an AI assistant
 construction reference data and calculators it would otherwise guess at: cost codes, construction terms, waste
 factors, pay units, the typical trade sequence, cost and schedule metrics, unit conversions, and calculators for
-concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup versus margin.
+concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup versus margin. It also runs the
+arithmetic models most often get wrong: a **critical path** pass over your activities, **pay application** totals
+and **change order** markups.
 
 It is one Python file tree with **no dependencies, no network access and no accounts**. The data ships with it.
 
-![tools](https://img.shields.io/badge/tools-15-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![network](https://img.shields.io/badge/network-none-2ea043) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
+![tools](https://img.shields.io/badge/tools-18-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![network](https://img.shields.io/badge/network-none-2ea043) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
 
 ## Tools
 
@@ -36,7 +38,28 @@ It is one Python file tree with **no dependencies, no network access and no acco
 | `retainage` | "10% retainage on 500k billed, 380k already paid" | Retainage held and outstanding, and the amount due |
 | `markup_margin` | "Cost 100,000 at 20% markup: what's my margin?" | Price, profit, markup and margin |
 
+**Schedule and money**
+
+| Tool | Ask it things like | Returns |
+| --- | --- | --- |
+| `critical_path` | "Here are my 40 activities and their logic: what's critical?" | Duration, the driving path, near-critical work, early and late dates, total and free float, dates on a Monday to Friday calendar, and warnings for loops, open ends and leads. Handles FS, SS, FF and SF links with lags |
+| `pay_application` | "Check this pay app: 10% retainage, 5% on stored materials" | Per line: completed and stored, percent, balance and retainage. Summary: earned less retainage, less previous certificates, payment due, balance to finish. Flags lines billed over their scheduled value |
+| `change_order_markup` | "Labor 10k with 35% burden, sub 20k at 5%, 10 and 10 OH&P, 1% bond" | The line-by-line build-up in a stated order, the total and the effective markup on direct cost |
+
 Every tool is read-only and tells the model its results are planning values to be checked against your own data.
+
+## Prompts
+
+Five workflows that clients such as Claude Desktop and Claude Code offer as slash commands. Each one tells the
+model what to produce and which tools to use for the numbers.
+
+| Prompt | What it does |
+| --- | --- |
+| `draft_rfi` | Turns a field question or a document conflict into a clear, single-issue RFI with references, impact and a needed-by date |
+| `check_pay_application` | Recomputes a pay application and flags over-billed lines, front-loading, stored materials without backup, and retainage that doesn't match the terms |
+| `review_change_order` | Recomputes the markups, checks them against the contract terms and lists what is missing or unsupported |
+| `schedule_review` | Finds the critical path and near-critical work, and suggests up to three logic fixes |
+| `quantity_takeoff` | Turns a described scope into quantities with waste and pay units, as a table |
 
 ## Resources
 
@@ -58,7 +81,13 @@ these bundled files can be read.
 
 ## Install
 
-Clone the repository anywhere. Python 3.9 or later is all it needs.
+**Quickest, with [uv](https://docs.astral.sh/uv/):** no clone needed.
+
+```bash
+claude mcp add construction-reference -- uvx --from git+https://github.com/constructelligence-lab/construction-mcp construction-mcp
+```
+
+**Or clone it.** Python 3.9 or later is all it needs.
 
 ```bash
 git clone https://github.com/constructelligence-lab/construction-mcp.git
@@ -101,7 +130,8 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"m
 
 ## Protocol
 
-JSON-RPC 2.0 over stdio, one message per line. Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list` and `resources/read`,
+JSON-RPC 2.0 over stdio, one message per line. Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`,
+`prompts/list` and `prompts/get`,
 and accepts MCP protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05`. Tool results carry
 both a JSON text block and `structuredContent`. Input problems come back as tool results with `isError: true`,
 so the model can correct its call. Logging goes to stderr.

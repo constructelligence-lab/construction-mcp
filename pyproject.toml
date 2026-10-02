@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "construction-mcp"
+version = "0.3.0"
+description = "Offline MCP server with construction reference data and calculators: cost codes, glossary, waste factors, CPM, pay applications, change orders and quantities."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT (code), CC BY 4.0 (data and documentation)" }
+authors = [{ name = "Constructelligence" }]
+keywords = ["mcp", "model-context-protocol", "construction", "estimating", "critical-path", "cpm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/constructelligence-lab/construction-mcp"
+Data = "https://github.com/constructelligence-lab/construction-data"
+
+[project.scripts]
+construction-mcp = "construction_mcp.__main__:main"
+
+[tool.setuptools]
+packages = ["construction_mcp"]
+
+[tool.setuptools.package-data]
+construction_mcp = ["data/*.csv", "data/*.md"]

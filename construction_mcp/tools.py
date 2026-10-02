@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import re
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
@@ -430,6 +431,324 @@ def asphalt_tonnage(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- schedule and money
+
+MAX_ACTIVITIES = 500
+MAX_LINES = 300
+RELATIONSHIPS = ("FS", "SS", "FF", "SF")
+
+
+def _list(args: dict[str, Any], key: str, limit: int) -> list[Any]:
+    value = args.get(key)
+    if not isinstance(value, list) or not value:
+        raise ToolError(f"'{key}' must be a non-empty list")
+    if len(value) > limit:
+        raise ToolError(f"'{key}' has {len(value)} items; the limit is {limit}")
+    return value
+
+
+def _predecessor(raw: Any, owner: str) -> tuple[str, str, Decimal]:
+    """A predecessor is an id ("A", meaning finish-to-start with no lag) or {"id", "type", "lag"}."""
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip(), "FS", Decimal(0)
+    if not isinstance(raw, dict):
+        raise ToolError(f"activity {owner!r}: each predecessor must be an id or an object with 'id', 'type' and 'lag'")
+    pred = _text(raw, "id")
+    kind = (_text(raw, "type", required=False) or "FS").upper()
+    if kind not in RELATIONSHIPS:
+        raise ToolError(f"activity {owner!r}: relationship type must be one of {', '.join(RELATIONSHIPS)}, not {kind!r}")
+    lag = _number(raw, "lag", required=False, minimum=None, default=0)
+    return pred, kind, lag
+
+
+def _workday(start: date, offset: int, workdays_only: bool) -> date:
+    if not workdays_only:
+        return start + timedelta(days=offset)
+    day = start
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    step = 1 if offset >= 0 else -1
+    for _ in range(abs(offset)):
+        day += timedelta(days=step)
+        while day.weekday() >= 5:
+            day += timedelta(days=step)
+    return day
+
+
+def critical_path(args: dict[str, Any]) -> dict[str, Any]:
+    raw = _list(args, "activities", MAX_ACTIVITIES)
+    near = _number(args, "near_critical_days", required=False, default=5)
+    acts: dict[str, dict[str, Any]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ToolError("each activity must be an object with 'id', 'duration' and optional 'predecessors'")
+        key = _text(item, "id")
+        if key in acts:
+            raise ToolError(f"activity id {key!r} appears more than once")
+        preds = item.get("predecessors") or []
+        if not isinstance(preds, list):
+            raise ToolError(f"activity {key!r}: 'predecessors' must be a list")
+        acts[key] = {
+            "id": key,
+            "name": _text(item, "name", required=False),
+            "duration": _number(item, "duration"),
+            "preds": [_predecessor(p, key) for p in preds],
+        }
+    for a in acts.values():
+        for pred, _, _ in a["preds"]:
+            if pred not in acts:
+                raise ToolError(f"activity {a['id']!r} has predecessor {pred!r}, which is not in the list")
+            if pred == a["id"]:
+                raise ToolError(f"activity {a['id']!r} lists itself as a predecessor")
+
+    # topological order (Kahn); whatever is left over sits on or behind a loop
+    succs: dict[str, list[tuple[str, str, Decimal]]] = {k: [] for k in acts}
+    waiting = {k: len(a["preds"]) for k, a in acts.items()}
+    for a in acts.values():
+        for pred, kind, lag in a["preds"]:
+            succs[pred].append((a["id"], kind, lag))
+    order = [k for k in acts if waiting[k] == 0]
+    for k in order:
+        for s, _, _ in succs[k]:
+            waiting[s] -= 1
+            if waiting[s] == 0:
+                order.append(s)
+    if len(order) < len(acts):
+        stuck = [k for k in acts if waiting[k] > 0]
+        raise ToolError(f"the logic has a loop; these activities are on it or wait on it: {', '.join(stuck[:20])}")
+
+    es: dict[str, Decimal] = {}
+    for k in order:
+        a, start = acts[k], Decimal(0)
+        for pred, kind, lag in a["preds"]:
+            p = acts[pred]
+            pes, pef = es[pred], es[pred] + p["duration"]
+            start = max(start, {"FS": pef + lag, "SS": pes + lag, "FF": pef + lag - a["duration"], "SF": pes + lag - a["duration"]}[kind])
+        es[k] = start
+    ef = {k: es[k] + acts[k]["duration"] for k in acts}
+    finish = max(ef.values())
+
+    lf: dict[str, Decimal] = {}
+    for k in reversed(order):
+        a, late = acts[k], finish
+        for s, kind, lag in succs[k]:
+            sls, slf = lf[s] - acts[s]["duration"], lf[s]
+            late = min(late, {"FS": sls - lag, "SS": sls - lag + a["duration"], "FF": slf - lag, "SF": slf - lag + a["duration"]}[kind])
+        lf[k] = late
+
+    def free_float(k: str) -> Decimal:
+        if not succs[k]:
+            return finish - ef[k]
+        slack = []
+        for s, kind, lag in succs[k]:
+            slack.append({"FS": es[s] - ef[k] - lag, "SS": es[s] - es[k] - lag, "FF": ef[s] - ef[k] - lag, "SF": ef[s] - es[k] - lag}[kind])
+        return min(slack)
+
+    start_text = _text(args, "start_date", required=False)
+    workdays_only = args.get("workdays_only", True)
+    if not isinstance(workdays_only, bool):
+        raise ToolError("'workdays_only' must be true or false")
+    start_day = None
+    if start_text:
+        try:
+            start_day = date.fromisoformat(start_text)
+        except ValueError:
+            raise ToolError("'start_date' must be an ISO date such as 2026-03-02") from None
+        values = [a["duration"] for a in acts.values()] + [lag for a in acts.values() for _, _, lag in a["preds"]]
+        if any(v != v.to_integral_value() for v in values):
+            raise ToolError("dates need whole-day durations and lags; leave out 'start_date' to work in fractional days")
+
+    def num(v: Decimal) -> float:
+        return float(v.normalize()) if v == v.to_integral_value() else _round(v, 2)
+
+    rows = []
+    for k in sorted(acts, key=lambda k: (es[k], order.index(k))):
+        a = acts[k]
+        total = lf[k] - a["duration"] - es[k]
+        row: dict[str, Any] = {
+            "id": k,
+            **({"name": a["name"]} if a["name"] else {}),
+            "duration": num(a["duration"]),
+            "early_start": num(es[k]),
+            "early_finish": num(ef[k]),
+            "late_start": num(lf[k] - a["duration"]),
+            "late_finish": num(lf[k]),
+            "total_float": num(total),
+            "free_float": num(free_float(k)),
+            "critical": total <= 0,
+        }
+        if start_day is not None:
+            row["start_date"] = _workday(start_day, int(es[k]), workdays_only).isoformat()
+            last = int(ef[k]) - 1 if a["duration"] > 0 else int(ef[k])
+            row["finish_date"] = _workday(start_day, last, workdays_only).isoformat()
+        rows.append(row)
+
+    # the driving chain: walk back from the latest-finishing critical activity through zero-slack links
+    chain: list[str] = []
+    current = next((r["id"] for r in reversed(rows) if r["critical"] and ef[r["id"]] == finish), None)
+    while current is not None:
+        chain.append(current)
+        a, nxt = acts[current], None
+        for pred, kind, lag in a["preds"]:
+            p = acts[pred]
+            driven = {"FS": ef[pred] + lag, "SS": es[pred] + lag, "FF": ef[pred] + lag - a["duration"], "SF": es[pred] + lag - a["duration"]}[kind]
+            if driven == es[current] and lf[pred] - p["duration"] - es[pred] <= 0:
+                nxt = pred
+                break
+        current = nxt
+    chain.reverse()
+
+    # an open (dangling) start has no FS or SS link into it; an open finish has no FS or FF link out of it
+    open_starts = [k for k, a in acts.items() if not any(kind in ("FS", "SS") for _, kind, _ in a["preds"])]
+    open_finishes = [k for k in acts if not any(kind in ("FS", "FF") for _, kind, _ in succs[k])]
+    warnings = []
+    if len(open_starts) > 1:
+        warnings.append(f"{len(open_starts)} activities have no predecessor driving their start ({', '.join(open_starts[:10])}). Check that each really can start on day 0.")
+    if len(open_finishes) > 1:
+        warnings.append(f"{len(open_finishes)} activities have no successor depending on their finish ({', '.join(open_finishes[:10])}). Open ends overstate float; tie them to a later activity or a finish milestone.")
+    if any(lag < 0 for a in acts.values() for _, _, lag in a["preds"]):
+        warnings.append("Negative lags (leads) are in use. They hide logic; many scheduling specs restrict them.")
+    out: dict[str, Any] = {
+        "project_duration": num(finish),
+        "critical_path": chain,
+        "critical_activities": [r["id"] for r in rows if r["critical"]],
+        "near_critical": [r["id"] for r in rows if not r["critical"] and Decimal(str(r["total_float"])) <= near],
+        "activities": rows,
+        "warnings": warnings,
+        "note": (
+            "Durations, lags and float are in the units you gave (normally working days); day 0 is the start. No calendars, "
+            "constraints or resource limits are applied: check the result in your scheduling software."
+        ),
+    }
+    if start_day is not None:
+        out["finish_date"] = _workday(start_day, max(int(finish) - 1, 0), workdays_only).isoformat()
+        out["calendar"] = "Monday to Friday, no holidays" if workdays_only else "every calendar day"
+    return out
+
+
+def pay_application(args: dict[str, Any]) -> dict[str, Any]:
+    raw = _list(args, "lines", MAX_LINES)
+    work_pct = _number(args, "retainage_percent")
+    stored_pct = _number(args, "stored_materials_retainage_percent", required=False, default=work_pct)
+    previous = _number(args, "previous_certificates", required=False, default=0)
+    if work_pct > 100 or stored_pct > 100:
+        raise ToolError("retainage percentages cannot exceed 100")
+    cent = Decimal("0.01")
+    lines, warnings = [], []
+    totals = {k: Decimal(0) for k in ("scheduled", "previous", "this", "stored", "completed", "retainage_work", "retainage_stored")}
+    for n, item in enumerate(raw, 1):
+        if not isinstance(item, dict):
+            raise ToolError(f"line {n}: each line must be an object")
+        label = _text(item, "description", required=False) or f"line {n}"
+        sv = _number(item, "scheduled_value")
+        prev = _number(item, "previous_completed", required=False, default=0)
+        this = _number(item, "this_period", required=False, default=0, minimum=None)
+        stored = _number(item, "stored_materials", required=False, default=0)
+        work = prev + this
+        if work < 0:
+            raise ToolError(f"{label}: 'this_period' credits more than was previously completed")
+        completed = work + stored
+        ret_work = (work * work_pct / 100).quantize(cent, rounding=ROUND_HALF_UP)
+        ret_stored = (stored * stored_pct / 100).quantize(cent, rounding=ROUND_HALF_UP)
+        if completed > sv:
+            warnings.append(f"{label}: completed and stored ({_round(completed)}) exceeds the scheduled value ({_round(sv)}). Overbilled, or a change order is missing from the schedule of values.")
+        lines.append({
+            "description": label,
+            "scheduled_value": _round(sv),
+            "previous_completed": _round(prev),
+            "this_period": _round(this),
+            "stored_materials": _round(stored),
+            "completed_and_stored_to_date": _round(completed),
+            "percent_complete": _round(completed / sv * 100, 1) if sv else None,
+            "balance_to_finish": _round(sv - completed),
+            "retainage": _round(ret_work + ret_stored),
+        })
+        for key, value in (("scheduled", sv), ("previous", prev), ("this", this), ("stored", stored), ("completed", completed), ("retainage_work", ret_work), ("retainage_stored", ret_stored)):
+            totals[key] += value
+
+    retainage_total = totals["retainage_work"] + totals["retainage_stored"]
+    earned = totals["completed"] - retainage_total
+    due = earned - previous
+    if due < 0:
+        warnings.append("Earned less retainage is below the previous certificates: this application is a credit. Check for over-payment or a billing reversal.")
+    return {
+        "lines": lines,
+        "summary": {
+            "contract_sum_to_date": _round(totals["scheduled"]),
+            "total_completed_and_stored_to_date": _round(totals["completed"]),
+            "retainage_on_completed_work": _round(totals["retainage_work"]),
+            "retainage_on_stored_materials": _round(totals["retainage_stored"]),
+            "total_retainage": _round(retainage_total),
+            "total_earned_less_retainage": _round(earned),
+            "less_previous_certificates": _round(previous),
+            "current_payment_due": _round(due),
+            "balance_to_finish_including_retainage": _round(totals["scheduled"] - earned),
+            "percent_complete": _round(totals["completed"] / totals["scheduled"] * 100, 1) if totals["scheduled"] else None,
+        },
+        "warnings": warnings,
+        "note": (
+            "Laid out like a standard schedule of values continuation sheet and payment summary. Scheduled values should "
+            "already include approved change orders. Retainage is rounded to the cent per line. Your contract's retainage "
+            "and stored-materials terms govern."
+        ),
+    }
+
+
+def change_order_markup(args: dict[str, Any]) -> dict[str, Any]:
+    labor = _number(args, "labor", required=False, default=0)
+    material = _number(args, "material", required=False, default=0)
+    equipment = _number(args, "equipment", required=False, default=0)
+    sub = _number(args, "subcontract", required=False, default=0)
+    burden = _number(args, "labor_burden_percent", required=False, default=0)
+    overhead = _number(args, "overhead_percent", required=False, default=0)
+    profit = _number(args, "profit_percent", required=False, default=0)
+    sub_markup = _number(args, "subcontract_markup_percent", required=False)
+    bond = _number(args, "bond_percent", required=False, default=0)
+    insurance = _number(args, "insurance_percent", required=False, default=0)
+    compound = args.get("profit_on_overhead", True)
+    if not isinstance(compound, bool):
+        raise ToolError("'profit_on_overhead' must be true or false")
+    if labor + material + equipment + sub == 0:
+        raise ToolError("give at least one of 'labor', 'material', 'equipment' or 'subcontract'")
+
+    burden_amount = labor * burden / 100
+    own = labor + burden_amount + material + equipment
+    oh = own * overhead / 100
+    pr = (own + oh) * profit / 100 if compound else own * profit / 100
+    if sub_markup is None:
+        sub_oh = sub * overhead / 100
+        sub_pr = (sub + sub_oh) * profit / 100 if compound else sub * profit / 100
+        sub_fee = sub_oh + sub_pr
+    else:
+        sub_fee = sub * sub_markup / 100
+    subtotal = own + oh + pr + sub + sub_fee
+    bond_amount = subtotal * bond / 100
+    insurance_amount = subtotal * insurance / 100
+    total = subtotal + bond_amount + insurance_amount
+    direct = own + sub  # burdened labor is a cost, not a markup
+    steps = [
+        ("Labor", labor), ("Labor burden", burden_amount), ("Material", material), ("Equipment", equipment),
+        ("Own-forces overhead", oh), ("Own-forces profit", pr), ("Subcontract", sub), ("Markup on subcontract", sub_fee),
+        ("Subtotal", subtotal), ("Bond", bond_amount), ("Insurance", insurance_amount), ("Change order total", total),
+    ]
+    return {
+        "breakdown": [{"item": name, "amount": _round(amount)} for name, amount in steps if amount or name in ("Subtotal", "Change order total")],
+        "total": _round(total),
+        "direct_cost_with_burden": _round(direct),
+        "effective_markup_on_direct_cost_percent": _round((total - direct) / direct * 100, 2),
+        "order_of_markups": (
+            "Burden on labor; overhead on own-forces cost; profit on cost plus overhead"
+            + ("" if compound else " (here: on cost only)")
+            + "; subcontract marked up separately; bond and insurance on the subtotal."
+        ),
+        "note": (
+            "Contracts usually fix which markups are allowed, on what base, and in what order, and often cap them, with a "
+            "lower rate on subcontracted work. Check the changes clause before pricing; the same percentages in a different "
+            "order give a different total."
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- definitions
 
 def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
@@ -614,6 +933,102 @@ TOOLS: list[dict[str, Any]] = [
         ),
         "annotations": READ_ONLY,
     },
+    {
+        "name": "critical_path",
+        "title": "Critical path (CPM)",
+        "description": "Run a critical path method forward and backward pass over a list of activities with durations and predecessors (FS, SS, FF or SF, with lags). Returns project duration, the driving critical path, near-critical activities, early and late dates, total and free float for each activity, and logic warnings such as open ends. Rejects loops and unknown predecessors. Optionally converts days to dates from a start date.",
+        "inputSchema": _schema(
+            {
+                "activities": {
+                    "type": "array",
+                    "maxItems": MAX_ACTIVITIES,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "duration": {"type": "number", "minimum": 0, "description": "Working days; 0 for a milestone"},
+                            "predecessors": {
+                                "type": "array",
+                                "description": "Ids (finish-to-start, no lag) or objects such as {\"id\": \"A\", \"type\": \"SS\", \"lag\": 2}",
+                                "items": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "string"},
+                                                "type": {"type": "string", "enum": list(RELATIONSHIPS), "default": "FS"},
+                                                "lag": {"type": "number", "default": 0, "description": "Negative for a lead"},
+                                            },
+                                            "required": ["id"],
+                                        },
+                                    ]
+                                },
+                            },
+                        },
+                        "required": ["id", "duration"],
+                    },
+                },
+                "start_date": {"type": "string", "format": "date", "description": "Optional ISO start date; needs whole-day durations"},
+                "workdays_only": {"type": "boolean", "default": True, "description": "Count Monday to Friday only when giving dates"},
+                "near_critical_days": {"type": "number", "minimum": 0, "default": 5},
+            },
+            ["activities"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "pay_application",
+        "title": "Pay application math",
+        "description": "Check or build a progress payment from schedule of values lines: completed and stored to date, percent complete, balance to finish and retainage per line, and the summary (total earned less retainage, less previous certificates, current payment due, balance to finish including retainage). Supports a separate retainage rate on stored materials and flags lines billed over their scheduled value.",
+        "inputSchema": _schema(
+            {
+                "lines": {
+                    "type": "array",
+                    "maxItems": MAX_LINES,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "scheduled_value": {"type": "number", "minimum": 0},
+                            "previous_completed": {"type": "number", "minimum": 0, "default": 0, "description": "Work completed on earlier applications"},
+                            "this_period": {"type": "number", "default": 0, "description": "Work completed this period; negative for a credit"},
+                            "stored_materials": {"type": "number", "minimum": 0, "default": 0, "description": "Materials presently stored, not yet installed"},
+                        },
+                        "required": ["scheduled_value"],
+                    },
+                },
+                "retainage_percent": {"type": "number", "minimum": 0, "maximum": 100},
+                "stored_materials_retainage_percent": {"type": "number", "minimum": 0, "maximum": 100, "description": "Defaults to retainage_percent"},
+                "previous_certificates": {"type": "number", "minimum": 0, "default": 0, "description": "Total certified for payment on earlier applications"},
+            },
+            ["lines", "retainage_percent"],
+        ),
+        "annotations": READ_ONLY,
+    },
+    {
+        "name": "change_order_markup",
+        "title": "Change order markup",
+        "description": "Price a change order from direct costs (labor, material, equipment, subcontract) by applying labor burden, overhead, profit, subcontract markup, bond and insurance in a stated order, so the total is reproducible. Returns the line-by-line build-up and the effective markup on direct cost.",
+        "inputSchema": _schema(
+            {
+                "labor": {"type": "number", "minimum": 0},
+                "material": {"type": "number", "minimum": 0},
+                "equipment": {"type": "number", "minimum": 0},
+                "subcontract": {"type": "number", "minimum": 0},
+                "labor_burden_percent": {"type": "number", "minimum": 0, "description": "Payroll taxes, insurance and fringes on bare labor"},
+                "overhead_percent": {"type": "number", "minimum": 0},
+                "profit_percent": {"type": "number", "minimum": 0},
+                "profit_on_overhead": {"type": "boolean", "default": True, "description": "Apply profit to cost plus overhead (true) or to cost only"},
+                "subcontract_markup_percent": {"type": "number", "minimum": 0, "description": "Combined markup on subcontract cost; defaults to overhead then profit"},
+                "bond_percent": {"type": "number", "minimum": 0},
+                "insurance_percent": {"type": "number", "minimum": 0},
+            },
+            [],
+        ),
+        "annotations": READ_ONLY,
+    },
 ]
 
 HANDLERS = {
@@ -632,6 +1047,9 @@ HANDLERS = {
     "rebar_weight": rebar_weight,
     "masonry_units": masonry_units,
     "asphalt_tonnage": asphalt_tonnage,
+    "critical_path": critical_path,
+    "pay_application": pay_application,
+    "change_order_markup": change_order_markup,
 }
 
 
