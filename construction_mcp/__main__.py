@@ -4,7 +4,7 @@ import os
 from . import __version__
 from .prompts import PROMPTS, get_prompt
 from .protocol import Server
-from .tools import HANDLERS, RESOURCES, TOOLS
+from .catalog import HANDLERS, RESOURCES, TOOLS
 
 
 def main(argv: "list[str] | None" = None) -> None:

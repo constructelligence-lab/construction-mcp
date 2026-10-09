@@ -5,12 +5,14 @@ construction reference data and calculators it would otherwise guess at: cost co
 factors, pay units, the typical trade sequence, cost and schedule metrics, unit conversions, and calculators for
 concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup versus margin. It also runs the
 arithmetic models most often get wrong: a **critical path** pass over your activities, **pay application** totals
-and **change order** markups.
+and **change order** markups. And it reads project records in the open
+[construction schema](https://github.com/constructelligence-lab/construction-schema): it validates them and follows
+the links from an RFI to the change order and the costs behind it.
 
 It is one Python file tree with **no dependencies, no outbound network access and no accounts**. The data ships
 with it. Run it locally over stdio, or [host it at a URL](#host-it-online) for a team or for claude.ai.
 
-![tools](https://img.shields.io/badge/tools-18-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![outbound network](https://img.shields.io/badge/outbound%20network-none-2ea043) ![transports](https://img.shields.io/badge/transports-stdio%20%2B%20HTTP-1f6feb) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
+![tools](https://img.shields.io/badge/tools-21-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![outbound network](https://img.shields.io/badge/outbound%20network-none-2ea043) ![transports](https://img.shields.io/badge/transports-stdio%20%2B%20HTTP-1f6feb) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
 
 ## Tools
 
@@ -47,7 +49,19 @@ with it. Run it locally over stdio, or [host it at a URL](#host-it-online) for a
 | `pay_application` | "Check this pay app: 10% retainage, 5% on stored materials" | Per line: completed and stored, percent, balance and retainage. Summary: earned less retainage, less previous certificates, payment due, balance to finish. Flags lines billed over their scheduled value |
 | `change_order_markup` | "Labor 10k with 35% burden, sub 20k at 5%, 10 and 10 OH&P, 1% bond" | The line-by-line build-up in a stated order, the total and the effective markup on direct cost |
 
-Every tool is read-only and tells the model its results are planning values to be checked against your own data.
+**Project records** in the [construction schema](https://github.com/constructelligence-lab/construction-schema)
+
+| Tool | Ask it things like | Returns |
+| --- | --- | --- |
+| `schema_describe` | "What fields does a change order have?" | The 17 entities, or one entity's fields, allowed values and what links to it |
+| `records_validate` | "Check these records before I load them" | Findings with check codes: missing or mistyped fields, duplicate ids, broken or cross-project links, values read from documents or by models without a confidence |
+| `records_trace` | "What came of RFI-011?" | The linked records in both directions (spec sections, submittals, change events, change orders, costs, pay applications), a tree, and a Markdown brief with the source of every record |
+
+The records come in with the call; the server keeps nothing. To turn CSV exports into records, use `cschema convert`
+in the construction-schema repository.
+
+Every tool is read-only. The reference and calculator tools tell the model their results are planning values to be
+checked against your own data.
 
 ## Prompts
 
@@ -66,8 +80,8 @@ model what to produce and which tools to use for the numbers.
 
 The eight datasets behind the tools are also exposed as read-only MCP resources
 (`construction-reference://data/<name>.csv`), so a client can attach a whole table to a conversation: cost codes,
-glossary, waste factors, earthwork factors, unit conversions, pay units, trade sequence and metric formulas. Only
-these bundled files can be read.
+glossary, waste factors, earthwork factors, unit conversions, pay units, trade sequence and metric formulas. So is the
+schema (`construction-reference://schema/entities.csv` and `fields.csv`). Only these bundled files can be read.
 
 ## What it does not do
 
@@ -196,6 +210,10 @@ The reference data is copied from
 belong. See [`construction_mcp/data/SOURCE.md`](construction_mcp/data/SOURCE.md). The cost codes use an
 independent numbering mapped to CSI division titles only; they are a starting point, not a standard.
 
+The schema and the code that reads it are copied from
+[construction-schema](https://github.com/constructelligence-lab/construction-schema); see
+[`construction_mcp/cschema/SOURCE.md`](construction_mcp/cschema/SOURCE.md).
+
 <!-- begin:family -->
 ## More from Constructelligence
 
@@ -206,6 +224,7 @@ Open construction resources from the same team, all maintained alongside this on
 | [AI in construction](https://github.com/constructelligence-lab/ai-in-construction) | A practical guide to AI in construction: what works today, what the data has to look like, the risks, and a 90-day plan. |
 | [Construction data migration](https://github.com/constructelligence-lab/construction-data-migration) | A guide and toolkit for moving a contractor between systems, and proving nothing was lost. |
 | [Construction project records](https://github.com/constructelligence-lab/construction-project-records) | Open schemas, templates and a checker for RFIs, submittals, change events, daily reports and punch lists. |
+| [Construction schema](https://github.com/constructelligence-lab/construction-schema) | One record format for construction project data, with provenance, classifications and links, built for AI. |
 | [Construction reference data](https://github.com/constructelligence-lab/construction-data) | Cost codes, units, waste factors, pay units, trade sequence, glossary and metric formulas in CSV. |
 | [Construction prompts](https://github.com/constructelligence-lab/construction-prompts) | 28 prompts for ChatGPT, Claude and Gemini, from bid go/no-go to notice letters. |
 | [Construction agent skills](https://github.com/constructelligence-lab/construction-agent-skills) | 28 installable agent skills for Claude Code and any agent that reads SKILL.md. |

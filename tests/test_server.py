@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from construction_mcp.protocol import SUPPORTED_VERSIONS, Server  # noqa: E402
-from construction_mcp.tools import HANDLERS, TOOLS  # noqa: E402
+from construction_mcp.catalog import HANDLERS, TOOLS  # noqa: E402
 
 
 def session(*messages: dict) -> list[dict]:
@@ -63,8 +63,8 @@ class Protocol(unittest.TestCase):
         )
         self.assertIn("resources", replies[0]["result"]["capabilities"])
         uris = [r["uri"] for r in replies[1]["result"]["resources"]]
-        self.assertEqual(len(uris), 8)
-        self.assertTrue(all(u.startswith("construction-reference://data/") for u in uris))
+        self.assertEqual(len(uris), 10)
+        self.assertTrue(all(u.startswith(("construction-reference://data/", "construction-reference://schema/")) for u in uris))
         content = replies[2]["result"]["contents"][0]
         self.assertEqual(content["mimeType"], "text/csv")
         self.assertTrue(content["text"].startswith("term,category,definition"))
@@ -294,6 +294,54 @@ class Tools(unittest.TestCase):
         reply = server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "define_term", "arguments": {"term": "retainage"}}})
         self.assertFalse(reply["result"]["isError"])
         self.assertIsNone(server.handle({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {}}))
+
+
+SRC = {"system": "procore", "method": "api"}
+RECORDS = [
+    {"type": "project", "id": "P-1", "name": "Sample", "source": SRC},
+    {"type": "spec_section", "id": "SPEC-05-12-00", "project_id": "P-1", "number": "05 12 00", "source": SRC},
+    {"type": "rfi", "id": "RFI-011", "project_id": "P-1", "number": "RFI-011", "subject": "Support for relocated unit", "status": "answered",
+     "created_date": "2026-08-17", "spec_section_ids": ["SPEC-05-12-00"], "source": SRC},
+    {"type": "change_event", "id": "CE-004", "project_id": "P-1", "number": "CE-004", "title": "Support steel", "origin": "rfi",
+     "status": "priced", "event_date": "2026-08-20", "rfi_ids": ["RFI-011"], "source": SRC},
+    {"type": "change_order", "id": "CO-004", "project_id": "P-1", "number": "CO-004", "level": "owner", "status": "pending",
+     "amount": "18500.00", "change_event_ids": ["CE-004"], "source": SRC},
+    {"type": "cost_line", "id": "INV-7-1", "project_id": "P-1", "posted_date": "2026-09-01", "amount": "900.00", "cost_code": "05-500",
+     "cost_type": "subcontract", "change_order_id": "CO-004", "source": {"system": "pdf", "method": "document", "confidence": 0.91}},
+]
+
+
+class Records(unittest.TestCase):
+    """The construction-schema tools: describe, validate, trace."""
+
+    def test_describe(self):
+        listing = call("schema_describe")["structuredContent"]
+        self.assertEqual(len(listing["entities"]), 17)
+        co = call("schema_describe", entity="change_order")["structuredContent"]
+        self.assertIn("change_event_ids", [f["field"] for f in co["fields"]])
+        self.assertIn("cost_line.change_order_id", co["pointed_at_by"])
+        self.assertTrue(call("schema_describe", entity="widget")["isError"])
+
+    def test_validate(self):
+        ok = call("records_validate", records=RECORDS)["structuredContent"]
+        self.assertTrue(ok["valid"], ok["findings"])
+        bad = [dict(r) for r in RECORDS]
+        bad[3]["rfi_ids"] = ["RFI-099"]
+        bad[5]["source"] = {"system": "pdf", "method": "document"}
+        found = call("records_validate", records=bad)["structuredContent"]
+        self.assertFalse(found["valid"])
+        self.assertEqual(sorted(f["check"] for f in found["findings"]), ["B09", "B11"])
+        self.assertTrue(call("records_validate", records=[])["isError"])
+
+    def test_trace(self):
+        r = call("records_trace", records=RECORDS, start="rfi:RFI-011")["structuredContent"]
+        reached = [(x["record"]["type"], x["record"]["id"]) for x in r["records"]]
+        self.assertEqual(reached[0], ("rfi", "RFI-011"))
+        for key in [("spec_section", "SPEC-05-12-00"), ("change_event", "CE-004"), ("change_order", "CO-004"), ("cost_line", "INV-7-1")]:
+            self.assertIn(key, reached)
+        self.assertIn("via document, confidence 0.91", r["brief"])
+        self.assertTrue(call("records_trace", records=RECORDS, start="rfi:RFI-404")["isError"])
+        self.assertTrue(call("records_trace", records=RECORDS, start="RFI-011")["isError"])
 
 
 class Http(unittest.TestCase):

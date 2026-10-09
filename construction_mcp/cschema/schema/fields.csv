@@ -1,0 +1,199 @@
+entity,field,type,required,allowed,description
+*,id,text,yes,,"The record's id, unique within its entity in a bundle. Keep the source system's number where it is unique (RFI-014); otherwise mint a stable one"
+*,project_id,ref:project,yes,,The project the record belongs to. Every entity marked project_scoped carries it
+*,source,source,yes,,"Where the record came from: system, record id, method and confidence. See the source fields below"
+*,classifications,classifications,no,,"Codes that place the record in a classification system: MasterFormat, UniFormat, OmniClass, Uniclass, cost code, CSI division"
+*,extra,object,no,,"Source fields with no home in the schema, kept under their source names. Never put a schema field here"
+source,system,text,yes,,"The system the record was read from: procore, autodesk_build, sage_300, quickbooks_online, csv, pdf, manual"
+source,record_id,text,no,,The record's own id in that system. Lets anyone trace a value back to where it came from
+source,method,enum,yes,api|export|document|manual|derived|model,"How it was read. document means extracted from a PDF or image; model means a machine-learning model produced it; derived means computed from other records"
+source,retrieved_at,datetime,no,,When it was read (ISO 8601)
+source,confidence,number,no,,"0 to 1. Required when method is document or model, so a reader can tell a typed value from a guessed one"
+source,document_id,ref:document,no,,The document the values were extracted from
+classification,system,enum,yes,masterformat|uniformat|omniclass|uniclass|csi_division|cost_code|cost_type|other,The classification system
+classification,code,text,yes,,"The code as the system writes it: 09 91 23, B2010, 23-13 11 00, Pr_20_93, 09-100"
+classification,title,text,no,,The code's title
+classification,confidence,number,no,,"0 to 1, when a model or rule assigned the code rather than a person"
+project,number,text,no,,The job number people type. Links the project to the accounting system's job
+project,name,text,yes,,The project's name
+project,status,enum,no,pursuit|preconstruction|active|closeout|closed|warranty,Where the project stands
+project,owner_party_id,ref:party,no,,The owner or customer
+project,contract_type,enum,no,lump_sum|gmp|cost_plus|unit_price|time_and_materials|design_build|other,The owner contract's pricing basis
+project,original_contract,money,no,,Owner contract value at award before change orders
+project,retainage_pct,number,no,,Default retainage percentage the owner holds
+project,start_date,date,no,,Planned or actual start
+project,finish_date,date,no,,Planned or actual substantial completion
+project,city,text,no,,Site city
+project,region,text,no,,"Site state, province or county"
+project,country,text,no,,ISO 3166-1 alpha-2 country code
+party,name,text,yes,,Legal or trading name
+party,role,enum,yes,owner|architect|engineer|general_contractor|construction_manager|subcontractor|supplier|consultant|inspector|person|other,The party's role on the work
+party,trade,text,no,,"The trade, for a subcontractor or supplier: drywall, electrical, mechanical"
+party,parent_party_id,ref:party,no,,"The company a person works for, or the parent of a subsidiary"
+party,email,text,no,,Contact email. Leave out when the bundle is shared outside the company
+document,title,text,yes,,The document's title
+document,doc_type,enum,yes,drawing|specification|contract|submittal_package|rfi_attachment|photo|report|invoice|correspondence|model|other,What kind of document it is
+document,number,text,no,,"Sheet or document number: A-201, S-103"
+document,revision,text,no,,"Revision as issued: 0, A, 3"
+document,issued_date,date,no,,Date issued
+document,uri,text,no,,Where the file lives. A path or a link the reader can open
+document,sha256,text,no,,Hash of the file. Proves which version a value was read from
+document,page_count,int,no,,Number of pages
+spec_section,number,text,yes,,"MasterFormat number as written in the specification: 09 21 16"
+spec_section,title,text,no,,"Section title. Optional because logs often cite the number alone"
+spec_section,document_id,ref:document,no,,The specification document the section is in
+rfi,number,text,yes,,RFI number as on the log and in correspondence. Never renumber
+rfi,subject,text,yes,,One line that makes sense in a log listing
+rfi,question,text,no,,The specific question
+rfi,proposed_answer,text,no,,Our proposed interpretation so the answer can be a confirmation
+rfi,status,enum,yes,draft|open|answered|closed|void,Answered means a response was received; closed means it has been acted on
+rfi,created_date,date,yes,,Date issued
+rfi,date_needed,date,no,,Date the answer is needed
+rfi,reason_needed,text,no,,Why that date: the activity or order it holds up
+rfi,answered_date,date,no,,Date the answer was received
+rfi,answer,text,no,,The response as received
+rfi,cost_impact,enum,no,none|possible|yes,Whether the answer changes cost
+rfi,schedule_impact,enum,no,none|possible|yes,Whether the answer changes time
+rfi,ball_in_court_party_id,ref:party,no,,Who owes the next action
+rfi,created_by_party_id,ref:party,no,,Who raised it
+rfi,spec_section_ids,refs:spec_section,no,,Specification sections the question is about
+rfi,document_ids,refs:document,no,,"Drawings, sketches and attachments cited"
+rfi,schedule_activity_ids,refs:schedule_activity,no,,Activities the answer holds up
+submittal,number,text,yes,,Submittal number. Resubmittals keep the number and raise the revision
+submittal,revision,int,yes,,0 for the first submission
+submittal,title,text,yes,,What is being submitted
+submittal,submittal_type,enum,no,product_data|shop_drawing|sample|mock_up|certificate|test_report|warranty|other,Type of submittal
+submittal,status,enum,yes,not_submitted|in_review|approved|approved_as_noted|revise_and_resubmit|rejected|void,Review outcome
+submittal,submitted_date,date,no,,Date sent for review
+submittal,review_due_date,date,no,,Date the review is due under the contract
+submittal,returned_date,date,no,,Date the reviewed submittal came back
+submittal,required_on_site,date,no,,Date the item is needed on site
+submittal,lead_time_days,int,no,,Days from approval to delivery
+submittal,spec_section_id,ref:spec_section,no,,The specification section the submittal answers
+submittal,responsible_party_id,ref:party,no,,Subcontractor or supplier providing it
+submittal,ball_in_court_party_id,ref:party,no,,Who owes the next action
+submittal,commitment_id,ref:commitment,no,,The subcontract or purchase order that buys what is submitted
+submittal,document_ids,refs:document,no,,The submitted package and the returned review
+change_event,number,text,yes,,Change event or potential change order number
+change_event,title,text,yes,,What happened
+change_event,origin,enum,yes,owner_directive|rfi|design_change|unforeseen_condition|delay|value_engineering|other,Where the change came from
+change_event,status,enum,yes,open|priced|submitted|approved|rejected|void,Where the event stands
+change_event,event_date,date,yes,,Date of the event or instruction
+change_event,notice_required_by,date,no,,Latest date for written notice under the contract
+change_event,notice_date,date,no,,Date written notice was given
+change_event,estimated_cost,money,no,,Current estimate of cost impact
+change_event,estimated_days,int,no,,Current estimate of time impact in days
+change_event,rfi_ids,refs:rfi,no,,RFIs whose answers gave rise to it
+change_event,observation_ids,refs:observation,no,,Site observations that gave rise to it
+change_event,spec_section_ids,refs:spec_section,no,,Specification sections affected
+change_order,number,text,yes,,Change order number
+change_order,title,text,no,,What changed
+change_order,level,enum,yes,owner|commitment,Owner change orders move the contract; commitment change orders move a subcontract or purchase order
+change_order,status,enum,yes,draft|pending|approved|rejected|void,Only approved change orders count toward contract value and committed cost
+change_order,amount,money,yes,,Value of the change. Negative for a deduct
+change_order,days,int,no,,Contract time added. Negative to remove time
+change_order,approved_date,date,no,,Date executed
+change_order,commitment_id,ref:commitment,no,,Required when level is commitment
+change_order,change_event_ids,refs:change_event,no,,The change events this order prices and agrees
+change_order,budget_line_ids,refs:budget_line,no,,Budget lines the change is budgeted to
+commitment,number,text,yes,,Subcontract or purchase order number
+commitment,title,text,no,,Scope title
+commitment,commitment_type,enum,yes,subcontract|purchase_order,Subcontract or purchase order
+commitment,status,enum,yes,draft|approved|executed|closed|void,Void commitments are excluded from committed cost
+commitment,vendor_party_id,ref:party,yes,,The subcontractor or supplier
+commitment,original_value,money,yes,,Value at execution before change orders
+commitment,retainage_pct,number,no,,Retainage percentage withheld from the vendor
+commitment,executed_date,date,no,,Date signed
+budget_line,cost_code,text,yes,,"Cost code of the line, as the accounting system numbers it. Its MasterFormat or CSI division goes in classifications"
+budget_line,cost_type,enum,yes,labor|material|subcontract|equipment|other,Cost type of the line
+budget_line,description,text,no,,What the line covers
+budget_line,original_budget,money,yes,,Budget at award
+budget_line,approved_changes,money,no,,Approved budget changes to date. Kept apart from the original so the history survives
+budget_line,pending_changes,money,no,,Budget changes submitted but not approved
+budget_line,forecast_to_complete,money,no,,Cost still expected to finish the line
+cost_line,posted_date,date,yes,,Accounting date
+cost_line,amount,money,yes,,Cost amount. Negative for credits
+cost_line,cost_code,text,yes,,Cost code posted to
+cost_line,cost_type,enum,yes,labor|material|subcontract|equipment|other,Cost type posted to
+cost_line,origin,enum,no,ap|payroll|journal|equipment|opening_balance,Where the cost came from
+cost_line,description,text,no,,Line memo
+cost_line,doc_number,text,no,,Invoice or document number
+cost_line,vendor_party_id,ref:party,no,,Who was paid
+cost_line,commitment_id,ref:commitment,no,,Commitment invoiced against
+cost_line,change_order_id,ref:change_order,no,,Change order the cost was incurred under
+cost_line,budget_line_id,ref:budget_line,no,,Budget line the cost draws on
+cost_line,document_id,ref:document,no,,The invoice or timesheet behind the cost
+cost_line,retainage_withheld,money,no,,Retainage withheld from the vendor on this line. A release is negative
+cost_line,billable,bool,no,,Whether the cost is billable to the owner
+billing,billing_type,enum,yes,pay_application|invoice,A progress pay application or a plain invoice
+billing,number,text,yes,,Application or invoice number
+billing,status,enum,yes,draft|submitted|approved|paid|void,Draft billings are excluded from billed to date
+billing,billing_date,date,no,,Date issued
+billing,period_end,date,no,,End of the period a pay application covers
+billing,work_completed,money,no,,Work completed and stored materials billed in this period
+billing,amount,money,yes,,Amount billed by this document before retainage
+billing,retainage_held,money,no,,Retainage the owner holds on it
+billing,retainage_released,money,no,,Retainage the owner releases on it
+billing,balance,money,no,,Still owed on it. Absent means fully open
+billing,due_date,date,no,,Payment due date
+billing,change_order_ids,refs:change_order,no,,Change orders billed for the first time on it
+billing,document_id,ref:document,no,,The signed application or invoice
+schedule_activity,activity_code,text,yes,,The activity id in the scheduling tool
+schedule_activity,name,text,yes,,Activity description
+schedule_activity,planned_start,date,no,,Baseline start
+schedule_activity,planned_finish,date,no,,Baseline finish
+schedule_activity,actual_start,date,no,,Actual start
+schedule_activity,actual_finish,date,no,,Actual finish
+schedule_activity,duration_days,number,no,,Remaining or original duration in working days
+schedule_activity,percent_complete,number,no,,0 to 100
+schedule_activity,critical,bool,no,,On the critical path in the latest schedule
+schedule_activity,predecessor_ids,refs:schedule_activity,no,,Activities that must finish first (finish to start). Other relationship types go in extra
+schedule_activity,responsible_party_id,ref:party,no,,Trade doing the work
+schedule_activity,cost_code,text,no,,Cost code the activity's work is budgeted to
+daily_log,log_date,date,yes,,Date the log covers
+daily_log,work_performed,text,yes,,Work in place by area and trade
+daily_log,weather,text,no,,Conditions that affected work
+daily_log,manpower_total,int,no,,Workers on site across all trades
+daily_log,delays,text,no,,Anything that stopped or slowed work and why
+daily_log,inspections,text,no,,Inspections and tests held and their results
+daily_log,safety_notes,text,no,,"Incidents, near misses and toolbox talks"
+daily_log,author_party_id,ref:party,no,,Who wrote it
+daily_log,schedule_activity_ids,refs:schedule_activity,no,,Activities worked on
+daily_log,document_ids,refs:document,no,,Photos and attachments
+observation,number,text,no,,Observation or issue number
+observation,kind,enum,yes,hazard|safety|quality|environmental|progress|issue,"What was seen. issue is a generic issue from a platform's issue log"
+observation,title,text,yes,,One line describing it
+observation,description,text,no,,What was seen and where
+observation,severity,enum,no,low|medium|high|critical,How serious
+observation,status,enum,yes,open|in_progress|closed|void,Where it stands
+observation,observed_at,datetime,yes,,When it was seen
+observation,due_date,date,no,,When it should be resolved
+observation,location,text,no,,"Area, level, room or grid"
+observation,detected_by,enum,no,person|model,Whether a person or a model raised it. A model's observation carries source.confidence
+observation,assigned_party_id,ref:party,no,,Who must resolve it
+observation,schedule_activity_id,ref:schedule_activity,no,,The activity under way when it was seen
+observation,document_ids,refs:document,no,,Photos or video frames showing it
+punch_item,number,text,yes,,Punch item number
+punch_item,location,text,yes,,Room or area
+punch_item,description,text,yes,,What is wrong and what fixes it
+punch_item,status,enum,yes,open|ready_for_review|closed|void,Ready for review means the trade says it is fixed
+punch_item,created_date,date,yes,,Date listed
+punch_item,due_date,date,no,,Date it must be fixed
+punch_item,closed_date,date,no,,Date verified as fixed
+punch_item,responsible_party_id,ref:party,yes,,Trade that must fix it
+punch_item,verified_by_party_id,ref:party,no,,Who checked the fix
+punch_item,document_ids,refs:document,no,,Photos
+asset,name,text,yes,,"The asset's name as tagged: AHU-01, Pump P-3"
+asset,asset_type,text,yes,,"The kind of asset: air handling unit, pump, door closer"
+asset,tag_number,text,no,,Tag on the equipment
+asset,manufacturer,text,no,,Manufacturer
+asset,model_number,text,no,,Model number
+asset,serial_number,text,no,,Serial number
+asset,location,text,no,,Space or area it serves or sits in
+asset,installation_date,date,no,,Date installed
+asset,warranty_start_date,date,no,,Date the warranty starts
+asset,warranty_end_date,date,no,,Date the warranty ends
+asset,spec_section_id,ref:spec_section,no,,The specification section it was bought under
+asset,submittal_id,ref:submittal,no,,The approved submittal for it
+asset,commitment_id,ref:commitment,no,,The subcontract or purchase order that supplied it
+asset,document_ids,refs:document,no,,"O&M manuals, warranties, test certificates"

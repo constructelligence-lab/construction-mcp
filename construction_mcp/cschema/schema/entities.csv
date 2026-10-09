@@ -1,0 +1,18 @@
+entity,label,project_scoped,group,description
+project,Project,no,core,A construction job. Every project-scoped record points at one
+party,Party,no,core,"A company or person on the job: owner, designer, contractor, subcontractor, supplier, inspector"
+document,Document,yes,core,"A file or sheet: drawing, specification, contract, photo, report, invoice. Records cite documents as evidence"
+spec_section,Specification section,yes,core,"One section of the project specification, numbered in MasterFormat. RFIs, submittals and assets hang off it"
+rfi,RFI,yes,project records,A request for information: a question to the design team and its answer
+submittal,Submittal,yes,project records,"Product data, shop drawings or samples sent for review. One record per revision"
+change_event,Change event,yes,project records,"Something that may change cost or time, before it is priced and agreed (a potential change order)"
+change_order,Change order,yes,money,An agreed change to the owner contract or to a subcontract or purchase order
+commitment,Commitment,yes,money,A subcontract or purchase order let on the project
+budget_line,Budget line,yes,money,One line of the project budget: a cost code and cost type
+cost_line,Cost line,yes,money,"One posted cost: an AP invoice line, payroll, equipment or journal entry"
+billing,Billing,yes,money,"A pay application or invoice to the owner, with the retainage on it"
+schedule_activity,Schedule activity,yes,field,One activity in the project schedule
+daily_log,Daily log,yes,field,"The site's record of one day: work, labour, weather, delays, inspections"
+observation,Observation,yes,field,"Something seen on site that needs attention: a hazard, a quality issue, an issue logged in a platform"
+punch_item,Punch item,yes,field,One item on the punch list near completion
+asset,Asset,yes,handover,"An installed piece of equipment or component handed over to the owner, the bridge to COBie"
