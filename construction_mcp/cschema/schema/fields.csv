@@ -54,6 +54,8 @@ rfi,answered_date,date,no,,Date the answer was received
 rfi,answer,text,no,,The response as received
 rfi,cost_impact,enum,no,none|possible|yes,Whether the answer changes cost
 rfi,schedule_impact,enum,no,none|possible|yes,Whether the answer changes time
+rfi,cost_impact_amount,money,no,,Expected cost of the answer when the platform records one
+rfi,schedule_impact_days,int,no,,Expected schedule impact in days when the platform records one
 rfi,ball_in_court_party_id,ref:party,no,,Who owes the next action
 rfi,created_by_party_id,ref:party,no,,Who raised it
 rfi,spec_section_ids,refs:spec_section,no,,Specification sections the question is about
