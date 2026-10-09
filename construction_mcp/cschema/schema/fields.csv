@@ -62,7 +62,7 @@ rfi,spec_section_ids,refs:spec_section,no,,Specification sections the question i
 rfi,document_ids,refs:document,no,,"Drawings, sketches and attachments cited"
 rfi,schedule_activity_ids,refs:schedule_activity,no,,Activities the answer holds up
 submittal,number,text,yes,,Submittal number. Resubmittals keep the number and raise the revision
-submittal,revision,int,yes,,0 for the first submission
+submittal,revision,int,no,,0 for the first submission. Leave out when the source does not say
 submittal,title,text,yes,,What is being submitted
 submittal,submittal_type,enum,no,product_data|shop_drawing|sample|mock_up|certificate|test_report|warranty|other,Type of submittal
 submittal,status,enum,yes,not_submitted|in_review|approved|approved_as_noted|revise_and_resubmit|rejected|void,Review outcome
