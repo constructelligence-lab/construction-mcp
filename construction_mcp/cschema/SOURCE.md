@@ -1,7 +1,7 @@
 # Schema source
 
 This folder is a copy of [construction-schema](https://github.com/constructelligence-lab/construction-schema) at
-commit `40c7fbc`: the `cschema` modules that describe, validate and trace bundles (`__init__`, `schema`, `values`,
+commit `eb4ce33`: the `cschema` modules that describe, validate and trace bundles (`__init__`, `schema`, `values`,
 `bundle`, `validate`, `graph`), and `schema/entities.csv` and `schema/fields.csv`, all unchanged.
 
 The schema and samples are CC BY 4.0 and the code is MIT. Credit: Constructelligence (constructelligence.co).

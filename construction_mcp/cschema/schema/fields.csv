@@ -95,7 +95,7 @@ change_order,status,enum,yes,draft|pending|approved|rejected|void,Only approved 
 change_order,amount,money,yes,,Value of the change. Negative for a deduct
 change_order,days,int,no,,Contract time added. Negative to remove time
 change_order,approved_date,date,no,,Date executed
-change_order,commitment_id,ref:commitment,no,,Required when level is commitment
+change_order,commitment_id,ref:commitment,no,,The subcontract or purchase order a commitment change order changes. Some platforms do not say; check B14 flags it
 change_order,change_event_ids,refs:change_event,no,,The change events this order prices and agrees
 change_order,budget_line_ids,refs:budget_line,no,,Budget lines the change is budgeted to
 commitment,number,text,yes,,Subcontract or purchase order number
@@ -107,7 +107,7 @@ commitment,original_value,money,yes,,Value at execution before change orders
 commitment,retainage_pct,number,no,,Retainage percentage withheld from the vendor
 commitment,executed_date,date,no,,Date signed
 budget_line,cost_code,text,yes,,"Cost code of the line, as the accounting system numbers it. Its MasterFormat or CSI division goes in classifications"
-budget_line,cost_type,enum,yes,labor|material|subcontract|equipment|other,Cost type of the line
+budget_line,cost_type,enum,no,labor|material|subcontract|equipment|other,Cost type of the line. Leave it out rather than guess when the source has none
 budget_line,description,text,no,,What the line covers
 budget_line,original_budget,money,yes,,Budget at award
 budget_line,approved_changes,money,no,,Approved budget changes to date. Kept apart from the original so the history survives
@@ -116,7 +116,7 @@ budget_line,forecast_to_complete,money,no,,Cost still expected to finish the lin
 cost_line,posted_date,date,yes,,Accounting date
 cost_line,amount,money,yes,,Cost amount. Negative for credits
 cost_line,cost_code,text,yes,,Cost code posted to
-cost_line,cost_type,enum,yes,labor|material|subcontract|equipment|other,Cost type posted to
+cost_line,cost_type,enum,no,labor|material|subcontract|equipment|other,Cost type posted to. Some ledgers (QuickBooks) have none; leave it out rather than guess
 cost_line,origin,enum,no,ap|payroll|journal|equipment|opening_balance,Where the cost came from
 cost_line,description,text,no,,Line memo
 cost_line,doc_number,text,no,,Invoice or document number

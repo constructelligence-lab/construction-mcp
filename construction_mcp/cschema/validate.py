@@ -28,7 +28,7 @@ CHECKS = {
     "B11": ("error", "Provenance is missing or incomplete, or a document or model value has no confidence"),
     "B12": ("warning", "A classification is malformed: unknown system, or a code that does not fit it"),
     "B13": ("warning", "Dates are out of order (answered before asked, finished before started)"),
-    "B14": ("error", "A commitment change order does not name its commitment"),
+    "B14": ("warning", "A commitment change order does not name its commitment, so committed cost cannot be placed"),
     "B15": ("warning", "A percentage or confidence is out of range"),
 }
 
