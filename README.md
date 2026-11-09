@@ -14,6 +14,13 @@ with it. Run it locally over stdio, or [host it at a URL](#host-it-online) for a
 
 ![tools](https://img.shields.io/badge/tools-21-1f6feb) ![prompts](https://img.shields.io/badge/prompts-5-1f6feb) ![datasets](https://img.shields.io/badge/datasets-8-1f6feb) ![dependencies](https://img.shields.io/badge/dependencies-none-2ea043) ![outbound network](https://img.shields.io/badge/outbound%20network-none-2ea043) ![transports](https://img.shields.io/badge/transports-stdio%20%2B%20HTTP-1f6feb) ![licence](https://img.shields.io/badge/licence-MIT%20%2B%20CC%20BY%204.0-6e7781)
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/tools-dark.svg">
+    <img src="assets/tools-light.svg" alt="construction-mcp has 21 tools in four groups: reference lookups, calculators, schedule and money, and project records" width="100%">
+  </picture>
+</p>
+
 ## Tools
 
 **Reference lookups**
