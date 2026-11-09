@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import csv
 import re
-from datetime import date, timedelta
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from .protocol import ToolError
+from .schedule import RELATIONSHIPS, open_ends, run_cpm, workday
 
 DATA = Path(__file__).resolve().parent / "data"
 SOURCE = "construction-data (CC BY 4.0, Constructelligence): https://github.com/constructelligence-lab/construction-data"
@@ -435,7 +436,6 @@ def asphalt_tonnage(args: dict[str, Any]) -> dict[str, Any]:
 
 MAX_ACTIVITIES = 500
 MAX_LINES = 300
-RELATIONSHIPS = ("FS", "SS", "FF", "SF")
 
 
 def _list(args: dict[str, Any], key: str, limit: int) -> list[Any]:
@@ -461,20 +461,6 @@ def _predecessor(raw: Any, owner: str) -> tuple[str, str, Decimal]:
     return pred, kind, lag
 
 
-def _workday(start: date, offset: int, workdays_only: bool) -> date:
-    if not workdays_only:
-        return start + timedelta(days=offset)
-    day = start
-    while day.weekday() >= 5:
-        day += timedelta(days=1)
-    step = 1 if offset >= 0 else -1
-    for _ in range(abs(offset)):
-        day += timedelta(days=step)
-        while day.weekday() >= 5:
-            day += timedelta(days=step)
-    return day
-
-
 def critical_path(args: dict[str, Any]) -> dict[str, Any]:
     raw = _list(args, "activities", MAX_ACTIVITIES)
     near = _number(args, "near_critical_days", required=False, default=5)
@@ -494,55 +480,8 @@ def critical_path(args: dict[str, Any]) -> dict[str, Any]:
             "duration": _number(item, "duration"),
             "preds": [_predecessor(p, key) for p in preds],
         }
-    for a in acts.values():
-        for pred, _, _ in a["preds"]:
-            if pred not in acts:
-                raise ToolError(f"activity {a['id']!r} has predecessor {pred!r}, which is not in the list")
-            if pred == a["id"]:
-                raise ToolError(f"activity {a['id']!r} lists itself as a predecessor")
-
-    # topological order (Kahn); whatever is left over sits on or behind a loop
-    succs: dict[str, list[tuple[str, str, Decimal]]] = {k: [] for k in acts}
-    waiting = {k: len(a["preds"]) for k, a in acts.items()}
-    for a in acts.values():
-        for pred, kind, lag in a["preds"]:
-            succs[pred].append((a["id"], kind, lag))
-    order = [k for k in acts if waiting[k] == 0]
-    for k in order:
-        for s, _, _ in succs[k]:
-            waiting[s] -= 1
-            if waiting[s] == 0:
-                order.append(s)
-    if len(order) < len(acts):
-        stuck = [k for k in acts if waiting[k] > 0]
-        raise ToolError(f"the logic has a loop; these activities are on it or wait on it: {', '.join(stuck[:20])}")
-
-    es: dict[str, Decimal] = {}
-    for k in order:
-        a, start = acts[k], Decimal(0)
-        for pred, kind, lag in a["preds"]:
-            p = acts[pred]
-            pes, pef = es[pred], es[pred] + p["duration"]
-            start = max(start, {"FS": pef + lag, "SS": pes + lag, "FF": pef + lag - a["duration"], "SF": pes + lag - a["duration"]}[kind])
-        es[k] = start
-    ef = {k: es[k] + acts[k]["duration"] for k in acts}
-    finish = max(ef.values())
-
-    lf: dict[str, Decimal] = {}
-    for k in reversed(order):
-        a, late = acts[k], finish
-        for s, kind, lag in succs[k]:
-            sls, slf = lf[s] - acts[s]["duration"], lf[s]
-            late = min(late, {"FS": sls - lag, "SS": sls - lag + a["duration"], "FF": slf - lag, "SF": slf - lag + a["duration"]}[kind])
-        lf[k] = late
-
-    def free_float(k: str) -> Decimal:
-        if not succs[k]:
-            return finish - ef[k]
-        slack = []
-        for s, kind, lag in succs[k]:
-            slack.append({"FS": es[s] - ef[k] - lag, "SS": es[s] - es[k] - lag, "FF": ef[s] - ef[k] - lag, "SF": ef[s] - es[k] - lag}[kind])
-        return min(slack)
+    cpm = run_cpm(acts)
+    es, ef, lf, finish, order = cpm["es"], cpm["ef"], cpm["lf"], cpm["finish"], cpm["order"]
 
     start_text = _text(args, "start_date", required=False)
     workdays_only = args.get("workdays_only", True)
@@ -564,7 +503,7 @@ def critical_path(args: dict[str, Any]) -> dict[str, Any]:
     rows = []
     for k in sorted(acts, key=lambda k: (es[k], order.index(k))):
         a = acts[k]
-        total = lf[k] - a["duration"] - es[k]
+        total = cpm["total_float"][k]
         row: dict[str, Any] = {
             "id": k,
             **({"name": a["name"]} if a["name"] else {}),
@@ -574,33 +513,16 @@ def critical_path(args: dict[str, Any]) -> dict[str, Any]:
             "late_start": num(lf[k] - a["duration"]),
             "late_finish": num(lf[k]),
             "total_float": num(total),
-            "free_float": num(free_float(k)),
+            "free_float": num(cpm["free_float"][k]),
             "critical": total <= 0,
         }
         if start_day is not None:
-            row["start_date"] = _workday(start_day, int(es[k]), workdays_only).isoformat()
+            row["start_date"] = workday(start_day, int(es[k]), workdays_only).isoformat()
             last = int(ef[k]) - 1 if a["duration"] > 0 else int(ef[k])
-            row["finish_date"] = _workday(start_day, last, workdays_only).isoformat()
+            row["finish_date"] = workday(start_day, last, workdays_only).isoformat()
         rows.append(row)
 
-    # the driving chain: walk back from the latest-finishing critical activity through zero-slack links
-    chain: list[str] = []
-    current = next((r["id"] for r in reversed(rows) if r["critical"] and ef[r["id"]] == finish), None)
-    while current is not None:
-        chain.append(current)
-        a, nxt = acts[current], None
-        for pred, kind, lag in a["preds"]:
-            p = acts[pred]
-            driven = {"FS": ef[pred] + lag, "SS": es[pred] + lag, "FF": ef[pred] + lag - a["duration"], "SF": es[pred] + lag - a["duration"]}[kind]
-            if driven == es[current] and lf[pred] - p["duration"] - es[pred] <= 0:
-                nxt = pred
-                break
-        current = nxt
-    chain.reverse()
-
-    # an open (dangling) start has no FS or SS link into it; an open finish has no FS or FF link out of it
-    open_starts = [k for k, a in acts.items() if not any(kind in ("FS", "SS") for _, kind, _ in a["preds"])]
-    open_finishes = [k for k in acts if not any(kind in ("FS", "FF") for _, kind, _ in succs[k])]
+    open_starts, open_finishes = open_ends(acts, cpm["succs"])
     warnings = []
     if len(open_starts) > 1:
         warnings.append(f"{len(open_starts)} activities have no predecessor driving their start ({', '.join(open_starts[:10])}). Check that each really can start on day 0.")
@@ -610,7 +532,7 @@ def critical_path(args: dict[str, Any]) -> dict[str, Any]:
         warnings.append("Negative lags (leads) are in use. They hide logic; many scheduling specs restrict them.")
     out: dict[str, Any] = {
         "project_duration": num(finish),
-        "critical_path": chain,
+        "critical_path": cpm["chain"],
         "critical_activities": [r["id"] for r in rows if r["critical"]],
         "near_critical": [r["id"] for r in rows if not r["critical"] and Decimal(str(r["total_float"])) <= near],
         "activities": rows,
@@ -621,7 +543,7 @@ def critical_path(args: dict[str, Any]) -> dict[str, Any]:
         ),
     }
     if start_day is not None:
-        out["finish_date"] = _workday(start_day, max(int(finish) - 1, 0), workdays_only).isoformat()
+        out["finish_date"] = workday(start_day, max(int(finish) - 1, 0), workdays_only).isoformat()
         out["calendar"] = "Monday to Friday, no holidays" if workdays_only else "every calendar day"
     return out
 
