@@ -1,6 +1,6 @@
-# Construction reference MCP server
+# construction-mcp: construction MCP server for Claude, Cursor and AI assistants
 
-A small, offline [Model Context Protocol](https://modelcontextprotocol.io) server that gives an AI assistant
+**construction-mcp** is a free, open source (MIT) construction MCP server: a small, offline [Model Context Protocol](https://modelcontextprotocol.io) server for Claude Desktop, Claude Code, Cursor, VS Code and any MCP client. It gives an AI assistant
 construction reference data and calculators it would otherwise guess at: cost codes, construction terms, waste
 factors, pay units, the typical trade sequence, cost and schedule metrics, unit conversions, and calculators for
 concrete, rebar, masonry, asphalt, earthwork, earned value, retainage and markup versus margin. It also runs the
@@ -233,6 +233,22 @@ Open construction resources from the same team, all maintained alongside this on
 
 <!-- end:family -->
 
+
+## Frequently asked questions
+
+**What is it for?** Construction estimating, scheduling and cost control questions where a language model would otherwise guess: CSI cost codes, waste factors, concrete and rebar quantities, critical path method (CPM) scheduling, earned value, retainage, pay application checks and change order markups.
+
+**Does it work with Claude Desktop, Claude Code and Cursor?** Yes. Any MCP client that can run a stdio server, or connect to a URL if you [host it](#host-it-online).
+
+**Does it send my project data anywhere?** No. It has no dependencies and makes no outbound network connections; the data ships with it and nothing is stored.
+
+**Can it check a schedule?** `critical_path` runs a CPM pass on your activities (FS, SS, FF, SF links with lags) and reports the driving path, float, open ends and loops.
+
+**Can it check a pay application?** `pay_application` totals completed and stored work, retainage and payment due per line, and flags lines billed over their scheduled value.
+
+**Does it work with Revit?** Pair it with the [Revit MCP server](https://github.com/constructelligence-lab/revit-mcp): Revit supplies the quantities, this server supplies the factors, codes and calculators.
+
+**Is the data reliable?** It is planning data, labelled as such, with sources. Verify quantities, factors and prices against your own project data before relying on them.
 
 ## Licence
 

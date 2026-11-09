@@ -10,17 +10,24 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT (code), CC BY 4.0 (data and documentation)" }
 authors = [{ name = "Constructelligence" }]
-keywords = ["mcp", "model-context-protocol", "construction", "estimating", "critical-path", "cpm"]
+keywords = ["mcp", "mcp-server", "model-context-protocol", "construction", "construction-management", "estimating", "critical-path", "cpm", "earned-value", "pay-application", "change-orders", "cost-codes", "claude", "ai-agents", "aec"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Natural Language :: English",
 ]
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/constructelligence-lab/construction-mcp"
+Homepage = "https://constructelligence.co"
+Repository = "https://github.com/constructelligence-lab/construction-mcp"
+Issues = "https://github.com/constructelligence-lab/construction-mcp/issues"
+Revit = "https://github.com/constructelligence-lab/revit-mcp"
 Data = "https://github.com/constructelligence-lab/construction-data"
 Schema = "https://github.com/constructelligence-lab/construction-schema"
 
