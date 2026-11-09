@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Regenerates the diagrams in assets/ (light and dark SVG). No dependencies: python3 scripts/make_graphics.py"""
+"""Regenerates the diagrams in assets/ (light and dark SVG). Run from anywhere: python3 scripts/make_graphics.py
+No dependencies. Diagrams that show data read it from this repository, so they cannot drift."""
 # ── svg kit: a small, dependency-free set of helpers for clean, Apple-style diagrams ─────────────────────────
 # Light and dark themes, system font stack, soft cards, Apple system colours. Every graphic is generated, so it
 # can be reproduced and, where it shows data, regenerated from that data.
@@ -157,6 +158,60 @@ def picture(name: str, alt: str, folder="assets", width="100%") -> str:
     )
 
 
+def make_cpm(theme, result, names):
+    acts = {a["id"]: a for a in result["activities"]}
+    preds = result["_preds"]
+    level = {}
+    for a in result["activities"]:
+        level[a["id"]] = max([level[p] + 1 for p in preds.get(a["id"], [])], default=0)
+    cols = max(level.values()) + 1
+    W = 1200
+    nw, nh = 176, 86
+    colx = {l: 56 + l * ((W - 112 - nw) / (cols - 1)) for l in range(cols)}
+    byl = {}
+    for a in result["activities"]:
+        byl.setdefault(level[a["id"]], []).append(a["id"])
+    crit = set(result["critical_path"])
+    # critical activities on the top row, so the path reads as a line
+    rowy = {}
+    for l, ids in byl.items():
+        ids.sort(key=lambda i: (i not in crit, i))
+        for r, i in enumerate(ids):
+            rowy[i] = 210 + r * 120
+    H = 210 + (max(len(v) for v in byl.values())) * 120 + 90
+    c = Canvas(W, H, theme, "A critical path worked by construction-mcp",
+               f"Six activities. The critical path is {' to '.join(result['critical_path'])}, {result['project_duration']} days; the other activities have {max(a['total_float'] for a in result['activities'])} days of float. These figures are the output of the critical_path tool.")
+    t = c.t
+    c.text(56, 84, "What critical_path returns", 40, 700, spacing=-0.7)
+    c.text(56, 118, f"{len(acts)} activities, {result['project_duration']:g} days. The red path cannot slip; the rest has float.", 18, 400, t["sub"])
+    pos = {i: (colx[level[i]], rowy[i]) for i in acts}
+    for i in acts:
+        for p in preds.get(i, []):
+            x1, y1 = pos[p][0] + nw, pos[p][1] + nh / 2
+            x2, y2 = pos[i][0], pos[i][1] + nh / 2
+            is_crit = p in crit and i in crit
+            col = t["red"] if is_crit else t["faint"]
+            if abs(y1 - y2) < 1:
+                c.arrow(x1, y1, x2 - 2, y2, col, 3 if is_crit else 2, 8)
+            else:
+                c.elbow(x1, y1, x2, y2, col, 3 if is_crit else 2)
+    for i, a in acts.items():
+        x, y = pos[i]
+        on = i in crit
+        c.card(x, y, nw, nh, 18)
+        if on:
+            c.rect(x, y, nw, nh, r=18, fill=t["red"], opacity=0.10)
+            c.rect(x, y, nw, nh, r=18, fill="none", stroke=t["red"], sw=2)
+        c.text(x + 18, y + 30, names[i], 16, 700)
+        c.text(x + 18, y + 52, f"{a['duration']:g} days", 13.5, 500, t["sub"])
+        fl = a["total_float"]
+        c.badge(x + 18, y + 60, "critical" if on else f"{fl:g} days float", t["red"] if on else t["green"], 11.5)
+    c.card(56, H - 78, W - 112, 46, 16)
+    c.text(80, H - 48, f"project_duration: {result['project_duration']:g}", 14, 600, t["text"], mono=True)
+    c.text(W - 80, H - 48, "Early and late dates, total and free float, loops and open ends are all in the answer.", 13.5, 400, t["sub"], "end")
+    return c
+
+
 def make_mcp_tools(theme):
     W, H = 1200, 620
     c = Canvas(W, H, theme, "The tools in construction-mcp",
@@ -192,6 +247,21 @@ def make_mcp_tools(theme):
     return c
 
 
+def cpm_example():
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from construction_mcp import tools
+    acts = [{"id": "A", "duration": 3}, {"id": "B", "duration": 4, "predecessors": ["A"]}, {"id": "C", "duration": 2, "predecessors": ["A"]},
+            {"id": "D", "duration": 5, "predecessors": ["B"]}, {"id": "E", "duration": 3, "predecessors": ["C"]}, {"id": "F", "duration": 2, "predecessors": ["D", "E"]}]
+    result = tools.critical_path({"activities": acts})
+    result["_preds"] = {a["id"]: a.get("predecessors", []) for a in acts}
+    names = {"A": "Mobilise", "B": "Excavate", "C": "Order steel", "D": "Foundations", "E": "Fabricate steel", "F": "Erect"}
+    return result, names
+
+
 if __name__ == "__main__":
-    out = Path(__file__).resolve().parent.parent / "assets"
+    HERE = Path(__file__).resolve().parent.parent
+    out = HERE / "assets"
     build(out, "tools", make_mcp_tools)
+    result, names = cpm_example()
+    build(out, "critical-path", make_cpm, result, names)

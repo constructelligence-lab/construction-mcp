@@ -56,6 +56,13 @@ with it. Run it locally over stdio, or [host it at a URL](#host-it-online) for a
 | `pay_application` | "Check this pay app: 10% retainage, 5% on stored materials" | Per line: completed and stored, percent, balance and retainage. Summary: earned less retainage, less previous certificates, payment due, balance to finish. Flags lines billed over their scheduled value |
 | `change_order_markup` | "Labor 10k with 35% burden, sub 20k at 5%, 10 and 10 OH&P, 1% bond" | The line-by-line build-up in a stated order, the total and the effective markup on direct cost |
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/critical-path-dark.svg">
+    <img src="assets/critical-path-light.svg" alt="A six-activity network with the critical path A, B, D, F highlighted at 14 days, and 4 days of float on the other two activities, as returned by the critical_path tool" width="100%">
+  </picture>
+</p>
+
 **Project records** in the [construction schema](https://github.com/constructelligence-lab/construction-schema)
 
 | Tool | Ask it things like | Returns |
